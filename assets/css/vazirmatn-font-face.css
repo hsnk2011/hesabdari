@@ -1,0 +1,41 @@
+/*
+ Vazirmatn (Variable)
+ Developer: Saber Rastikerdar (rastikerdar@gmail.com)
+ Version: 33.003
+ ------------------------------------------------------------------------------------------------*/
+
+@font-face {
+    font-family: Vazirmatn;
+    src: url('../fonts/Vazirmatn-Regular.woff2') format('woff2-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+/*
+ Vazirmatn (Non-variable)
+ ------------------------------------------------------------------------------------------------*/
+
+@font-face {
+    font-family: Vazirmatn;
+    src: url('../fonts/Vazirmatn-Regular.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: Vazirmatn;
+    src: url('../fonts/Vazirmatn-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: Vazirmatn;
+    src: url('../fonts/Vazirmatn-Bold.woff2') format('woff2');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}

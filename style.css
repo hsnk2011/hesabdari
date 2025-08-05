@@ -1,0 +1,201 @@
+@import url('assets/css/vazirmatn-font-face.css');
+
+body {
+    font-family: 'Vazirmatn', sans-serif;
+    background-color: #f8f9fa;
+}
+
+/* Default Layout Styles */
+.main-container {
+    display: none;
+    /* Hide main app by default */
+    padding-top: 20px;
+}
+
+.loader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Login Styles */
+#login-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #f8f9fa;
+    z-index: 10000;
+    display: none;
+    /* Initially hidden, JS will show it */
+    justify-content: center;
+    align-items: center;
+}
+
+#login-form-container {
+    padding: 2rem;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 400px;
+}
+
+/* Component Styles */
+.nav-tabs .nav-link {
+    color: #495057;
+}
+
+.nav-tabs .nav-link.active {
+    color: #000;
+    background-color: #fff;
+    border-color: #dee2e6 #dee2e6 #fff;
+}
+
+.card {
+    margin-bottom: 1.5rem;
+}
+
+/* IMPROVEMENT: The max-height and overflow-y properties were removed.
+  This prevents the "double scrollbar" issue where tables had their own scrollbar separate from the page.
+  The table will now grow with the page content, and pagination will manage the length.
+  The default responsive behavior of Bootstrap (horizontal scroll on small screens) is preserved.
+*/
+.table-responsive {
+    /* Add a min-height to prevent layout shifts during loading */
+    min-height: 200px;
+}
+
+.form-control,
+.form-select {
+    text-align: right;
+}
+
+.modal-header {
+    background-color: #f1f1f1;
+}
+
+.dynamic-row {
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+}
+
+.dynamic-row:last-child {
+    border-bottom: none;
+}
+
+.search-box {
+    margin-bottom: 1rem;
+}
+
+.accordion-button:not(.collapsed) {
+    color: #0c63e4;
+    background-color: #e7f1ff;
+}
+
+/* Status & Color Styles */
+
+/* NOTE: The !important rule is used here intentionally.
+  It ensures that the status color of a row (e.g., unsettled invoice)
+  is not overridden by Bootstrap's default hover or striped-table styles.
+  This maintains the visibility of the status color, which is critical for the user.
+*/
+.status-unsettled {
+    background-color: #fff3cd !important;
+    color: #856404;
+    font-weight: bold;
+}
+
+.status-settled {
+    background-color: #d1e7dd !important;
+    color: #0f5132;
+    font-weight: bold;
+}
+
+.report-card {
+    border-right: 4px solid;
+}
+
+.border-primary {
+    border-color: #0d6efd !important;
+}
+
+.border-success {
+    border-color: #198754 !important;
+}
+
+.border-danger {
+    border-color: #dc3545 !important;
+}
+
+.border-info {
+    border-color: #0dcaf0 !important;
+}
+
+/* Table Sorting Styles */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+}
+
+.sortable-header:hover {
+    background-color: #f1f1f1;
+}
+
+.sort-indicator {
+    font-size: 0.9em;
+    color: #0d6efd;
+    margin-left: 5px;
+    /* Changed from margin-right for better alignment in RTL */
+    display: inline-block;
+    width: 1em;
+    /* Reserve space for the icon */
+}
+
+
+/* Pagination Styles */
+nav[aria-label$="Pagination"] {
+    margin-top: 1rem;
+}
+
+.pagination .page-link {
+    cursor: pointer;
+}
+
+/* Report Table Header Alignment */
+#report-results-container table th {
+    text-align: right;
+}
+
+/* Person Statement Row Styling */
+#person-statement-table tbody .tr-type-payment {
+    background-color: #f8f9fa !important;
+    /* Light grey for payments */
+}
+
+#person-statement-table tbody .tr-type-invoice {
+    font-weight: 500;
+    /* Bolder font for invoices */
+}
+
+
+/* Align headers in the account ledger table to the right */
+#account-transactions-table thead th {
+    text-align: right !important;
+}
+
+/* Align headers for both account tables to the right */
+#account-transactions-table thead th,
+#account-statement-table thead th {
+    text-align: right !important;
+}
