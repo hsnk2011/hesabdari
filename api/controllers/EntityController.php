@@ -5,7 +5,7 @@ class EntityController {
     private $conn;
 
     private $modelMapping = [
-        'accounts' => 'Account', // <-- این خط اضافه شد
+        'accounts' => 'Account',
         'customers' => 'Customer',
         'suppliers' => 'Supplier',
         'products' => 'Product',
@@ -31,26 +31,25 @@ class EntityController {
             $modelFile = __DIR__ . '/../models/' . $modelName . '.php';
             if (file_exists($modelFile)) {
                 require_once $modelFile;
+                // For Invoice model, we don't need to specify type here, the model handles it
+                if ($modelName === 'Invoice') {
+                    require_once __DIR__ . '/../models/BaseModel.php';
+                    return new Invoice($this->conn);
+                }
                 return new $modelName($this->conn);
             }
         }
         return null;
     }
     
-    // ... (بقیه متدهای این فایل بدون تغییر باقی می‌مانند) ...
     public function getPaginatedData($data) {
         $tableName = $data['tableName'] ?? '';
         $model = $this->getModel($tableName);
 
         if ($model) {
-            if ($tableName === 'sales_invoices' || $tableName === 'purchase_invoices' || $tableName === 'consignment_sales' || $tableName === 'consignment_purchases') {
-                $type = (strpos($tableName, 'sales') !== false) ? 'sales' : 'purchase';
-                $is_consignment = (strpos($tableName, 'consignment') !== false);
-                $data['is_consignment'] = $is_consignment;
-                $result = $model->getPaginated($type, $data);
-            } else {
-                $result = $model->getPaginated($data);
-            }
+            // The model's getPaginated method now correctly handles all cases
+            // by inspecting the '$data' array, which includes 'tableName'.
+            $result = $model->getPaginated($data);
             send_json($result);
         } else {
             send_json(['error' => 'Invalid table specified for pagination.'], 400);

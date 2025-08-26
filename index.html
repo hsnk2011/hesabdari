@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
-    <title>سیستم حسابداری بازرگانی فرش (نسخه نهایی)</title>
+    <title>سیستم حسابداری بازرگانی فرش</title>
     <link rel="stylesheet" href="assets/css/bootstrap.rtl.min.css">
     <link rel="stylesheet" href="assets/css/bootstrap-icons.css">
     <link rel="stylesheet" href="assets/css/persian-datepicker.min.css" />
@@ -214,6 +214,7 @@
                     </div>
                 </div>
             </div>
+            
             <div class="tab-pane fade" id="customers" role="tabpanel">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h4>مدیریت مشتریان</h4>
@@ -319,12 +320,15 @@
                                     <thead>
                                         <tr>
                                             <th class="sortable-header" data-sort-by="partnerName">شریک
-                                                <span class="sort-indicator"></span></th>
+                                                <span class="sort-indicator"></span>
+                                            </th>
                                             <th class="sortable-header" data-sort-by="date">تاریخ
-                                                <span class="sort-indicator"></span></th>
+                                                <span class="sort-indicator"></span>
+                                            </th>
                                             <th>نوع</th>
                                             <th class="sortable-header" data-sort-by="amount">مبلغ
-                                                <span class="sort-indicator"></span></th>
+                                                <span class="sort-indicator"></span>
+                                            </th>
                                             <th>حساب</th>
                                             <th>توضیحات</th>
                                             <th>عملیات</th>
@@ -409,6 +413,7 @@
                                         <th class="sortable-header" data-sort-by="totalAmount">مبلغ کل
                                             <span class="sort-indicator"></span>
                                         </th>
+                                        <th>تخفیف</th>
                                         <th>وضعیت</th>
                                         <th>عملیات</th>
                                     </tr>
@@ -441,6 +446,7 @@
                                         <th class="sortable-header" data-sort-by="totalAmount">مبلغ کل
                                             <span class="sort-indicator"></span>
                                         </th>
+                                        <th>تخفیف</th>
                                         <th>وضعیت</th>
                                         <th>عملیات</th>
                                     </tr>
@@ -598,11 +604,14 @@
                                 <th class="sortable-header" data-sort-by="id"># <span class="sort-indicator"></span>
                                 </th>
                                 <th class="sortable-header" data-sort-by="date">تاریخ
-                                    <span class="sort-indicator"></span></th>
+                                    <span class="sort-indicator"></span>
+                                </th>
                                 <th class="sortable-header" data-sort-by="category">دسته‌بندی
-                                    <span class="sort-indicator"></span></th>
+                                    <span class="sort-indicator"></span>
+                                </th>
                                 <th class="sortable-header" data-sort-by="amount">مبلغ (تومان)
-                                    <span class="sort-indicator"></span></th>
+                                    <span class="sort-indicator"></span>
+                                </th>
                                 <th>حساب پرداخت</th>
                                 <th>توضیحات</th>
                                 <th>عملیات</th>
@@ -658,10 +667,12 @@
                                     <option value="profit-loss">سود و زیان</option>
                                     <option value="sales-invoices">فاکتورهای فروش</option>
                                     <option value="purchase-invoices">فاکتورهای خرید</option>
-                                    <option value="accounts">بانک ها و صندوق</option> <option value="inventory">موجودی انبار</option>
+                                    <option value="accounts">گردش حساب بانک/صندوق</option>
+                                    <option value="inventory">موجودی انبار</option>
                                     <option value="inventory-value">ارزش موجودی انبار</option>
+                                    <option value="inventory-ledger">کاردکس کالا (گردش محصول)</option>
                                     <option value="expenses">هزینه‌ها</option>
-                                    <option value="persons">اشخاص</option>
+                                    <option value="persons">صورتحساب اشخاص</option>
                                 </select>
                             </div>
                             <div class="col-md-5" id="report-person-controls" style="display: none;">
@@ -671,6 +682,10 @@
                             <div class="col-md-5" id="report-account-controls" style="display: none;">
                                 <label for="report-account-select" class="form-label">انتخاب حساب</label>
                                 <select class="form-select" id="report-account-select" data-placeholder="جستجو و انتخاب حساب..."></select>
+                            </div>
+                            <div class="col-md-5" id="report-product-controls" style="display: none;">
+                                <label for="report-product-select" class="form-label">انتخاب محصول</label>
+                                <select class="form-select" id="report-product-select" data-placeholder="جستجو و انتخاب محصول..."></select>
                             </div>
                             <div class="col-md-2">
                                 <button class="btn btn-info w-100" id="generate-report-btn"><i class="bi bi-play-fill me-2"></i>تولید گزارش</button>
@@ -694,7 +709,7 @@
                 <div id="report-results-container"></div>
             </div>
             <div class="tab-pane fade" id="activity-log" role="tabpanel">
-                <h4>گزارش فعالیت کاربران (۱۰۰ رویداد آخر)</h4>
+                <h4>گزارش فعالیت کاربران (۵۰۰ رویداد آخر)</h4>
                 <div class="table-responsive">
                     <table class="table table-striped table-sm table-hover" id="activity-log-table">
                         <thead class="table-light">
@@ -718,6 +733,7 @@
             </div>
         </div>
     </div>
+
     <div class="modal fade" id="customerModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -735,12 +751,13 @@
                         <div class="mb-3"><label for="customer-phone" class="form-label">تلفن</label><input type="tel" class="form-control" id="customer-phone">
                         </div>
                         <div class="mb-3"><label for="customer-national-id" class="form-label">کد ملی</label><input type="text" class="form-control" id="customer-national-id" required>
-                            <div class="mb-3">
-                                <label for="customer-initial-balance" class="form-label">مانده حساب اولیه (بدهکاری)</label>
-                                <input type="text" class="form-control numeric-input" id="customer-initial-balance" value="0">
-                                <div class="form-text">مبلغی که از قبل از شما طلبکار است را وارد کنید.</div>
-                            </div>
-                        </div><button type="submit" class="btn btn-success w-100">ذخیره</button>
+                        </div>
+                        <div class="mb-3">
+                            <label for="customer-initial-balance" class="form-label">مانده حساب اولیه (بدهکاری)</label>
+                            <input type="text" class="form-control numeric-input" id="customer-initial-balance" value="0">
+                            <div class="form-text">مبلغی که مشتری از قبل به شما بدهکار است را وارد کنید.</div>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">ذخیره</button>
                     </form>
                 </div>
             </div>
@@ -764,12 +781,13 @@
                         </div>
                         <div class="mb-3">
                             <label for="supplier-economic-code" class="form-label">کد اقتصادی</label><input type="text" class="form-control" id="supplier-economic-code" required>
-                            <div class="mb-3">
-                                <label for="supplier-initial-balance" class="form-label">مانده حساب اولیه (بستانکاری)</label>
-                                <input type="text" class="form-control numeric-input" id="supplier-initial-balance" value="0">
-                                <div class="form-text">مبلغی که از قبل به شما بدهکار است را وارد کنید.</div>
-                            </div>
-                        </div><button type="submit" class="btn btn-success w-100">ذخیره</button>
+                        </div>
+                        <div class="mb-3">
+                            <label for="supplier-initial-balance" class="form-label">مانده حساب اولیه (بستانکاری)</label>
+                            <input type="text" class="form-control numeric-input" id="supplier-initial-balance" value="0">
+                            <div class="form-text">مبلغی که شما از قبل به تامین‌کننده بدهکار هستید را وارد کنید.</div>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">ذخیره</button>
                     </form>
                 </div>
             </div>
@@ -1114,7 +1132,7 @@
                             <label for="cash-check-account-id" class="form-label">انتخاب حساب</label>
                             <select class="form-select" id="cash-check-account-id" required></select>
                         </div>
-                        <button type="submit" class="btn btn-success w-100">ثبت وصول</button>
+                        <button type="submit" class="btn btn-success w-100">ثبت</button>
                     </form>
                 </div>
             </div>

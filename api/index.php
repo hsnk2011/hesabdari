@@ -4,9 +4,7 @@ session_start();
 ini_set('display_errors', 1); // For development only. Should be 0 in production.
 error_reporting(E_ALL);
 
-// Set a global exception handler for uncaught exceptions.
 set_exception_handler(function($exception) {
-    // In a production environment, you should log this error instead of displaying it.
     $response = [
         'error' => 'PHP Exception',
         'message' => $exception->getMessage(),
@@ -22,27 +20,23 @@ set_exception_handler(function($exception) {
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/core/helpers.php';
 
-// Setup database connection.
 $conn = new mysqli(DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME);
 if ($conn->connect_error) {
     send_json(['error' => 'Database connection failed: ' . $conn->connect_error], 500);
 }
 $conn->set_charset("utf8mb4");
 
-// Get the requested action and input data.
 $action = $_GET['action'] ?? '';
 $input_data = json_decode(file_get_contents('php://input'), true);
 
-// Define public actions that do not require an active session.
 $public_actions = ['login', 'check_session', 'logout'];
 if (!in_array($action, $public_actions) && !isset($_SESSION['user_id'])) {
     send_json(['error' => 'Authentication required.'], 401);
 }
 
 // ---- Main Routing Table ----
-// Maps each action to its corresponding [Controller, Method].
 $routes = [
-    // Auth Routes -> AuthController
+    // Auth Routes
     'login' => ['AuthController', 'login'],
     'logout' => ['AuthController', 'logout'],
     'register' => ['AuthController', 'register'],
@@ -51,21 +45,23 @@ $routes = [
     'admin_reset_password' => ['AuthController', 'adminResetPassword'],
     'delete_user' => ['AuthController', 'deleteUser'],
     
-    // Data Fetching Routes -> DataController
+    // Data Fetching Routes
     'get_dashboard_data' => ['DataController', 'getDashboardData'],
-    'get_all_data_for_reports' => ['DataController', 'getAllDataForReports'],
     'get_full_customers_list' => ['DataController', 'getFullCustomersList'],
     'get_full_suppliers_list' => ['DataController', 'getFullSuppliersList'],
     'get_full_products_list' => ['DataController', 'getFullProductsList'],
     'get_partners' => ['DataController', 'getPartners'],
+    'get_full_accounts_list' => ['DataController', 'getFullAccountsList'],
+    'get_entity_by_id' => ['DataController', 'getEntityById'],
+    'search_entities' => ['DataController', 'searchEntities'], // <-- مسیر جدید برای جستجو
     
-    // --- NEW: Account Routes -> AccountController ---
-    'get_full_accounts_list' => ['DataController', 'getFullAccountsList'], // We'll add this method to DataController
+    // Account Routes
     'get_accounts_paginated' => ['AccountController', 'getPaginated'],
     'save_account' => ['AccountController', 'save'],
     'delete_account' => ['AccountController', 'delete'],
+    'get_account_transactions' => ['AccountController', 'getAccountTransactions'],
 
-    // Invoice Routes -> InvoiceController
+    // Invoice Routes
     'save_sales_invoice' => ['InvoiceController', 'saveSalesInvoice'],
     'delete_salesInvoice' => ['InvoiceController', 'deleteSalesInvoice'],
     'save_purchase_invoice' => ['InvoiceController', 'savePurchaseInvoice'],
@@ -73,13 +69,13 @@ $routes = [
     'mark_as_consignment' => ['InvoiceController', 'markAsConsignment'],
     'return_from_consignment' => ['InvoiceController', 'returnFromConsignment'],
 
-    // Partner Routes -> PartnerController
+    // Partner Routes
     'save_partner' => ['PartnerController', 'savePartner'],
     'delete_partner' => ['PartnerController', 'deletePartner'],
     'save_partner_transaction' => ['PartnerController', 'savePartnerTransaction'],
     'delete_partnerTransaction' => ['PartnerController', 'deletePartnerTransaction'],
 
-    // Generic Entity Routes -> EntityController
+    // Generic Entity Routes
     'get_paginated_data' => ['EntityController', 'getPaginatedData'],
     'save_customer' => ['EntityController', 'saveCustomer'],
     'delete_customer' => ['EntityController', 'deleteCustomer'],
@@ -89,24 +85,31 @@ $routes = [
     'delete_product' => ['EntityController', 'deleteProduct'],
     'save_expense' => ['EntityController', 'saveExpense'],
     'delete_expense' => ['EntityController', 'deleteExpense'],
-    'cash_check' => ['CheckController', 'cash'], // Add this line
-    'get_account_transactions' => ['AccountController', 'getAccountTransactions'], // <-- ADD THIS
-
+    
+    // Check Routes
+    'cash_check' => ['CheckController', 'cash'],
+    'clear_payable_check' => ['CheckController', 'clearPayable'],
+    
+    // Report Routes
+    'get_profit_loss_report' => ['ReportController', 'getProfitLossReport'],
+    'get_person_statement' => ['ReportController', 'getPersonStatement'],
+    'get_account_statement' => ['ReportController', 'getAccountStatement'],
+    'get_invoices_report' => ['ReportController', 'getInvoicesReport'],
+    'get_expenses_report' => ['ReportController', 'getExpensesReport'],
+    'get_inventory_report' => ['ReportController', 'getInventoryReport'],
+    'get_inventory_value_report' => ['ReportController', 'getInventoryValueReport'],
+    'get_inventory_ledger_report' => ['ReportController', 'getInventoryLedgerReport'],
 ];
 
 // ---- Route Dispatcher ----
 if (isset($routes[$action])) {
     list($controllerName, $methodName) = $routes[$action];
     
-    // Autoload the required controller file.
     $controllerFile = __DIR__ . '/controllers/' . $controllerName . '.php';
     
     if (file_exists($controllerFile)) {
         require_once $controllerFile;
-        // Instantiate the controller and pass the database connection.
         $controller = new $controllerName($conn);
-        
-        // Call the designated method on the controller.
         $controller->$methodName($input_data);
     } else {
         send_json(['error' => "Server error: Controller file not found for '{$controllerName}'."], 500);
@@ -115,7 +118,6 @@ if (isset($routes[$action])) {
     send_json(['error' => 'Action not found: ' . htmlspecialchars($action)], 404);
 }
 
-// Gracefully close the database connection at the end of the script.
 if ($conn->thread_id) {
     $conn->close();
 }

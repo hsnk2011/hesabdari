@@ -5,88 +5,22 @@ require_once __DIR__ . '/Account.php';
 
 class Expense extends BaseModel {
     protected $tableName = 'expenses';
-    protected $allowedFilters = ['category', 'description', 'amount', 'a.name']; // Use real column name with alias
-    protected $allowedSorts = ['id', 'date', 'category', 'amount'];
 
-    public function getPaginated($input) {
-        $page = isset($input['currentPage']) ? max(1, intval($input['currentPage'])) : 1;
-        $limit = isset($input['limit']) ? intval($input['limit']) : 15;
-        $offset = ($page - 1) * $limit;
-
-        $sortBy = in_array($input['sortBy'] ?? 'id', $this->allowedSorts) ? $input['sortBy'] : 'id';
-        $sortOrder = in_array(strtoupper($input['sortOrder'] ?? 'ASC'), ['ASC', 'DESC']) ? strtoupper($input['sortOrder']) : 'ASC';
+    public function __construct($db) {
+        parent::__construct($db);
+        $this->alias = 'e'; // Set table alias
         
-        $searchTerm = $input['searchTerm'] ?? '';
-
-        // Custom select and from for this model to include account name
-        $select = "SELECT e.*, a.name as accountName";
-        $from = "FROM `{$this->tableName}` e LEFT JOIN accounts a ON e.account_id = a.id";
-        $where = "WHERE 1";
+        // Configure the select and join clauses for the paginated query in BaseModel
+        $this->select = "SELECT e.*, a.name as accountName";
+        $this->from = "FROM `{$this->tableName}` as e";
+        $this->join = "LEFT JOIN accounts a ON e.account_id = a.id";
         
-        $params = [];
-        $param_types = '';
-
-        if (!empty($searchTerm) && !empty($this->allowedFilters)) {
-            $search_parts = [];
-            foreach ($this->allowedFilters as $col) {
-                $search_parts[] = "$col LIKE ?";
-            }
-            $where .= " AND (" . implode(' OR ', $search_parts) . ")";
-            
-            $wildcard = "%{$searchTerm}%";
-            foreach ($this->allowedFilters as $_) {
-                $params[] = $wildcard;
-                $param_types .= 's';
-            }
-        }
-        
-        $bind_params_safely = function($stmt, $types, &$params) {
-            if (!empty($params)) {
-                $refs = [];
-                foreach ($params as $key => $value) $refs[$key] = &$params[$key];
-                call_user_func_array([$stmt, 'bind_param'], array_merge([$types], $refs));
-            }
-        };
-
-        // Count total records
-        $count_sql = "SELECT COUNT(*) as total $from $where";
-        $stmt_count = $this->conn->prepare($count_sql);
-        $bind_params_safely($stmt_count, $param_types, $params);
-        $stmt_count->execute();
-        $stmt_count->store_result();
-        $totalRecords = 0;
-        $stmt_count->bind_result($totalRecords);
-        $stmt_count->fetch();
-        $stmt_count->close();
-
-        // Fetch paginated data
-        $data_sql = "$select $from $where ORDER BY e.`$sortBy` $sortOrder LIMIT ? OFFSET ?";
-        $params[] = $limit;
-        $params[] = $offset;
-        $param_types .= 'ii';
-        
-        $stmt_data = $this->conn->prepare($data_sql);
-        $bind_params_safely($stmt_data, $param_types, $params);
-        $stmt_data->execute();
-        
-        $stmt_data->store_result();
-        $meta = $stmt_data->result_metadata();
-        $fields = []; $row = [];
-        while ($field = $meta->fetch_field()) {
-            $fields[] = &$row[$field->name];
-        }
-        call_user_func_array([$stmt_data, 'bind_result'], $fields);
-        
-        $data = [];
-        while ($stmt_data->fetch()) {
-            $c = [];
-            foreach($row as $key => $val) $c[$key] = $val;
-            $data[] = $c;
-        }
-        $stmt_data->close();
-        
-        return ['data' => $data, 'totalRecords' => $totalRecords];
+        // Define allowed filters and sorts using aliases
+        $this->allowedFilters = ['e.category', 'e.description', 'e.amount', 'a.name'];
+        $this->allowedSorts = ['id', 'date', 'category', 'amount'];
     }
+
+    // The getPaginated method is now inherited from BaseModel and works with the configuration above.
 
     public function save($data) {
         if (empty($data['category']) || !isset($data['amount']) || !is_numeric($data['amount']) || $data['amount'] <= 0 || empty($data['date']) || empty($data['account_id'])) {
@@ -100,13 +34,13 @@ class Expense extends BaseModel {
             $id = $data['id'] ?? null;
             $amount = $data['amount'];
             $accountId = $data['account_id'];
+            $oldExpense = null;
 
             if ($id) {
                 $oldExpenseStmt = $this->conn->prepare("SELECT amount, account_id FROM `{$this->tableName}` WHERE id = ?");
                 $oldExpenseStmt->bind_param("i", $id);
                 $oldExpenseStmt->execute();
                 $oldExpenseStmt->store_result();
-                $oldExpense = null;
                 if ($oldExpenseStmt->num_rows > 0) {
                     $old_amount = 0; $old_account_id = 0;
                     $oldExpenseStmt->bind_result($old_amount, $old_account_id);
@@ -115,6 +49,7 @@ class Expense extends BaseModel {
                 }
                 $oldExpenseStmt->close();
 
+                // Revert the old transaction amount from the old account
                 if ($oldExpense) {
                     $accountModel->updateBalance($oldExpense['account_id'], $oldExpense['amount']);
                 }
@@ -130,19 +65,8 @@ class Expense extends BaseModel {
             $expenseId = $id ?? $this->conn->insert_id;
             $stmt->close();
 
+            // Apply the new transaction amount to the new/current account
             $accountModel->updateBalance($accountId, -$amount);
-
-            $typeText = "هزینه: " . $data['category'];
-            $neg_amount = -$amount;
-            if ($id) {
-                $stmt_trans = $this->conn->prepare("UPDATE transactions SET amount=?, date=?, type=?, description=? WHERE relatedObjectType='expense' AND relatedObjectId=?");
-                $stmt_trans->bind_param("dsssi", $neg_amount, $data['date'], $typeText, $data['description'], $id);
-            } else {
-                $stmt_trans = $this->conn->prepare("INSERT INTO transactions (relatedObjectType, relatedObjectId, amount, date, type, description) VALUES ('expense', ?, ?, ?, ?, ?)");
-                $stmt_trans->bind_param("idsss", $expenseId, $neg_amount, $data['date'], $typeText, $data['description']);
-            }
-            $stmt_trans->execute();
-            $stmt_trans->close();
 
             $this->conn->commit();
             return ['success' => true, 'id' => $expenseId];
@@ -155,6 +79,9 @@ class Expense extends BaseModel {
 
     public function delete($id) {
         $id = intval($id);
+        if (!$id) {
+             return ['error' => 'شناسه نامعتبر است.', 'statusCode' => 400];
+        }
         $this->conn->begin_transaction();
         $accountModel = new Account($this->conn);
         try {
@@ -172,15 +99,13 @@ class Expense extends BaseModel {
             $stmt->close();
 
             if ($expense) {
+                // Add the amount back to the account
                 $accountModel->updateBalance($expense['account_id'], $expense['amount']);
             }
-
-            $stmt_trans = $this->conn->prepare("DELETE FROM transactions WHERE relatedObjectType='expense' AND relatedObjectId=?");
-            $stmt_trans->bind_param("i", $id);
-            $stmt_trans->execute();
-            $stmt_trans->close();
             
+            // Use the parent's delete method to remove the record
             parent::delete($id);
+
             $this->conn->commit();
             return ['success' => true];
 

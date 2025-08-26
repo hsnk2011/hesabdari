@@ -13,8 +13,7 @@ class DataController {
      */
     public function getDashboardData() {
         $today = date('Y-m-d');
-        $seven_days_ago = date('Y-m-d', strtotime('-7 days'));
-
+        
         $output = [
             'totalSales' => 0,
             'totalPurchases' => 0,
@@ -23,7 +22,7 @@ class DataController {
             'recentSales' => [],
             'dueReceivedChecks' => [],
             'duePayableChecks' => [],
-            'expensesByCategory' => [] // داده جدید برای نمودار
+            'expensesByCategory' => []
         ];
 
         // --- Basic Stats ---
@@ -66,7 +65,7 @@ class DataController {
         ");
         if ($due_payable_res) $output['duePayableChecks'] = $due_payable_res->fetch_all(MYSQLI_ASSOC);
         
-        // --- NEW: Expenses by Category for Chart.js ---
+        // --- Expenses by Category for Chart.js ---
         $expenses_cat_res = $this->conn->query("
             SELECT category, SUM(amount) as total
             FROM expenses
@@ -81,104 +80,131 @@ class DataController {
             $output['expensesByCategory'] = $cats;
         }
 
-
         send_json($output);
     }
     
     /**
-     * Fetches all data from all tables for client-side reporting.
+     * Fetches a single entity by its ID, including related data.
+     * Used for populating modals from clickable report links.
      */
-    public function getAllDataForReports() {
-        $data = [
-            'customers' => [], 'suppliers' => [], 'products' => [],
-            'sales_invoices' => [], 'purchase_invoices' => [],
-            'expenses' => [], 'partners' => [], 'partner_transactions' => [],
-            'accounts' => [], 'checks' => []
-        ];
+    public function getEntityById($data) {
+        $entityType = $data['entityType'] ?? '';
+        $id = intval($data['id'] ?? 0);
 
-        // Using Invoice model to fetch detailed invoices
-        require_once __DIR__ . '/../models/Invoice.php';
-        $invoiceModel = new Invoice($this->conn);
-
-        // Fetch all regular and consignment invoices
-        $all_sales_res = $this->conn->query("SELECT si.*, c.name as customerName FROM `sales_invoices` si LEFT JOIN customers c ON si.customerId = c.id ORDER BY si.date DESC");
-        $all_purchases_res = $this->conn->query("SELECT pi.*, s.name as supplierName FROM `purchase_invoices` pi LEFT JOIN suppliers s ON pi.supplierId = s.id ORDER BY pi.date DESC");
-
-        if ($all_sales_res) {
-            $sales_invoices = $all_sales_res->fetch_all(MYSQLI_ASSOC);
-            $data['sales_invoices'] = $invoiceModel->fetchInvoiceDetails($sales_invoices, 'sales');
-        }
-        if ($all_purchases_res) {
-            $purchase_invoices = $all_purchases_res->fetch_all(MYSQLI_ASSOC);
-            $data['purchase_invoices'] = $invoiceModel->fetchInvoiceDetails($purchase_invoices, 'purchase');
+        if (empty($entityType) || $id <= 0) {
+            send_json(['error' => 'اطلاعات نامعتبر است.'], 400);
+            return;
         }
 
-        // Fetch other tables
-        $tables_to_fetch = [
-            'customers' => "SELECT * FROM customers",
-            'suppliers' => "SELECT * FROM suppliers",
-            'products' => "SELECT p.*, ps.dimensions, ps.quantity FROM products p LEFT JOIN product_stock ps ON p.id = ps.product_id",
-            'expenses' => "SELECT * FROM expenses",
-            'partners' => "SELECT * FROM partners",
-            'partner_transactions' => "SELECT * FROM partner_transactions",
-            'accounts' => "SELECT * FROM accounts",
-            'checks' => "SELECT * FROM checks"
-        ];
-        
-        // Special handling for products to aggregate stock
-        $products_res = $this->conn->query($tables_to_fetch['products']);
-        $products_map = [];
-        if($products_res) {
-            while($row = $products_res->fetch_assoc()) {
-                $product_id = $row['id'];
-                if(!isset($products_map[$product_id])) {
-                    $products_map[$product_id] = [
-                        'id' => $row['id'],
-                        'name' => $row['name'],
-                        'description' => $row['description'],
-                        'stock' => []
-                    ];
+        $entity = null;
+
+        switch ($entityType) {
+            case 'salesInvoice':
+            case 'purchaseInvoice':
+                require_once __DIR__ . '/../models/Invoice.php';
+                $invoiceModel = new Invoice($this->conn);
+                $type = ($entityType === 'salesInvoice') ? 'sales' : 'purchase';
+                $table = ($type === 'sales') ? 'sales_invoices' : 'purchase_invoices';
+                $res = $this->conn->query("SELECT * FROM `{$table}` WHERE id = {$id}");
+                if ($res && $res->num_rows > 0) {
+                    $invoice_data = $res->fetch_all(MYSQLI_ASSOC);
+                    $entity = $invoiceModel->fetchInvoiceDetails($invoice_data, $type)[0];
                 }
-                if($row['dimensions']) {
-                    $products_map[$product_id]['stock'][] = [
-                        'dimensions' => $row['dimensions'],
-                        'quantity' => $row['quantity']
-                    ];
-                }
-            }
+                break;
+            
+            case 'expense':
+                $res = $this->conn->query("SELECT * FROM expenses WHERE id = {$id}");
+                if ($res) $entity = $res->fetch_assoc();
+                break;
         }
-        $data['products'] = array_values($products_map);
-        unset($tables_to_fetch['products']);
 
-        foreach ($tables_to_fetch as $key => $sql) {
-            $res = $this->conn->query($sql);
-            if ($res) {
-                $data[$key] = $res->fetch_all(MYSQLI_ASSOC);
-            }
+        if ($entity) {
+            send_json($entity);
+        } else {
+            send_json(['error' => 'موجودیت یافت نشد.'], 404);
         }
-        
-        send_json($data);
     }
     
+    /**
+     * Handles server-side searching for Select2 dropdowns.
+     * (FIXED to be compatible with older database drivers by avoiding get_result)
+     */
+    public function searchEntities($data) {
+        $entityType = $data['entityType'] ?? '';
+        $term = $data['term'] ?? '';
+        $results = [];
+
+        switch ($entityType) {
+            case 'customers':
+            case 'suppliers':
+                $table = ($entityType === 'customers') ? 'customers' : 'suppliers';
+                $searchTerm = "%{$term}%";
+                $stmt = $this->conn->prepare("SELECT id, name AS text FROM `{$table}` WHERE name LIKE ? LIMIT 30");
+                $stmt->bind_param("s", $searchTerm);
+                $stmt->execute();
+                
+                // *** FIX: Replaced get_result() with compatible data fetching method ***
+                $stmt->store_result();
+                $meta = $stmt->result_metadata();
+                $row = [];
+                $fields = [];
+                while ($field = $meta->fetch_field()) {
+                    $fields[] = &$row[$field->name];
+                }
+                call_user_func_array([$stmt, 'bind_result'], $fields);
+
+                while ($stmt->fetch()) {
+                    $c = [];
+                    foreach ($row as $key => $val) {
+                        $c[$key] = $val;
+                    }
+                    $results[] = $c;
+                }
+                $stmt->close();
+                break;
+            
+            case 'products':
+                require_once __DIR__ . '/../models/Product.php';
+                $productModel = new Product($this->conn);
+                $products = $productModel->searchByNameWithStock($term);
+                // Format for Select2, ensuring other data like 'stock' is preserved
+                foreach ($products as $p) {
+                    $results[] = [
+                        'id' => $p['id'],
+                        'text' => $p['name'],
+                        'stock' => $p['stock']
+                    ];
+                }
+                break;
+        }
+        
+        send_json(['results' => $results]);
+    }
+
+
     // --- Methods for fetching full lists for dropdowns ---
     public function getFullCustomersList() {
-        $res = $this->conn->query("SELECT id, name FROM `customers` ORDER BY name ASC");
+        $res = $this->conn->query("SELECT * FROM `customers` ORDER BY name ASC");
         send_json($res->fetch_all(MYSQLI_ASSOC));
     }
+    
     public function getFullSuppliersList() {
-        $res = $this->conn->query("SELECT id, name FROM `suppliers` ORDER BY name ASC");
+        $res = $this->conn->query("SELECT * FROM `suppliers` ORDER BY name ASC");
         send_json($res->fetch_all(MYSQLI_ASSOC));
     }
+
     public function getFullProductsList() {
         require_once __DIR__ . '/../models/Product.php';
         $model = new Product($this->conn);
         send_json($model->getFullListWithStock());
     }
+
     public function getPartners() {
         $res = $this->conn->query("SELECT id, name, share FROM `partners` ORDER BY name ASC");
         send_json($res->fetch_all(MYSQLI_ASSOC));
     }
-     public function getFullAccountsList() {
+    
+    public function getFullAccountsList() {
         require_once __DIR__ . '/../models/Account.php';
         $model = new Account($this->conn);
         send_json($model->getAll());

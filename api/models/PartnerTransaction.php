@@ -4,87 +4,84 @@ require_once __DIR__ . '/BaseModel.php';
 
 class PartnerTransaction extends BaseModel {
     protected $tableName = 'partner_transactions';
-    protected $allowedSorts = ['id', 'date', 'partnerName', 'amount'];
 
-    public function getPaginated($input) {
-        $page = isset($input['currentPage']) ? max(1, intval($input['currentPage'])) : 1;
-        $limit = isset($input['limit']) ? intval($input['limit']) : 15;
-        $offset = ($page - 1) * $limit;
+    public function __construct($db) {
+        parent::__construct($db);
 
-        $sortBy = in_array($input['sortBy'] ?? 'id', $this->allowedSorts) ? $input['sortBy'] : 'id';
-        if ($sortBy === 'partnerName') $orderByClause = 'p.name';
-        else $orderByClause = 'pt.' . $sortBy;
-        
-        $sortOrder = in_array(strtoupper($input['sortOrder'] ?? 'ASC'), ['ASC', 'DESC']) ? strtoupper($input['sortOrder']) : 'ASC';
-        $searchTerm = $input['searchTerm'] ?? '';
+        // This model's data comes from a complex UNION query, so we override the entire FROM clause.
+        // The BaseModel's getPaginated method will use this complex query as its source.
+        $unionQuery = "
+            (SELECT 
+                pt.id, 
+                p.name AS partnerName, 
+                pt.date, 
+                IF(pt.type = 'DEPOSIT', 'واریز شریک', 'برداشت شریک') AS type, 
+                pt.amount, 
+                pt.description, 
+                'partner_transaction' AS source,
+                pt.type AS original_type,
+                a.name as accountName
+            FROM partner_transactions pt
+            JOIN partners p ON pt.partnerId = p.id
+            LEFT JOIN accounts a ON pt.account_id = a.id)
+            
+            UNION ALL
+            
+            (SELECT 
+                e.id, 
+                p.name AS partnerName, 
+                e.date, 
+                CONCAT('هزینه: ', e.category) AS type, 
+                e.amount, 
+                e.description, 
+                'expense' AS source,
+                'EXPENSE' AS original_type,
+                a.name as accountName
+            FROM expenses e
+            JOIN accounts a ON e.account_id = a.id
+            JOIN partners p ON a.partner_id = p.id
+            WHERE a.partner_id IS NOT NULL)
+            
+            UNION ALL
 
-        $select = "SELECT pt.*, p.name as partnerName, a.name as accountName";
-        $from = "FROM `{$this->tableName}` pt 
-                 JOIN partners p ON pt.partnerId = p.id 
-                 LEFT JOIN accounts a ON pt.account_id = a.id";
-        $where = "WHERE 1";
-        
-        $search_params = [];
-        $search_param_types = '';
-        $allowedFilters = ['p.name', 'pt.type', 'pt.amount', 'a.name'];
+            (SELECT 
+                pay.id, 
+                p.name AS partnerName, 
+                pay.date, 
+                CONCAT('دریافت بابت فاکتور فروش #', pay.invoiceId) AS type, 
+                pay.amount, 
+                pay.description, 
+                'payment_in' AS source,
+                'PAYMENT_IN' AS original_type,
+                a.name as accountName
+            FROM payments pay
+            JOIN accounts a ON pay.account_id = a.id
+            JOIN partners p ON a.partner_id = p.id
+            WHERE pay.invoiceType = 'sales' AND pay.type = 'cash' AND a.partner_id IS NOT NULL)
 
-        if (!empty($searchTerm) && !empty($allowedFilters)) {
-            $search_parts = [];
-            foreach ($allowedFilters as $col) $search_parts[] = "$col LIKE ?";
-            $where .= " AND (" . implode(' OR ', $search_parts) . ")";
-            $wildcard = "%{$searchTerm}%";
-            foreach ($allowedFilters as $_) {
-                $search_params[] = $wildcard;
-                $search_param_types .= 's';
-            }
-        }
-        
-        $bind_params_safely = function($stmt, $types, &$params) {
-            if (!empty($params)) {
-                $refs = [];
-                foreach ($params as $key => $value) $refs[$key] = &$params[$key];
-                call_user_func_array([$stmt, 'bind_param'], array_merge([$types], $refs));
-            }
-        };
+            UNION ALL
 
-        // Count
-        $count_sql = "SELECT COUNT(*) as total $from $where";
-        $stmt_count = $this->conn->prepare($count_sql);
-        $bind_params_safely($stmt_count, $search_param_types, $search_params);
-        $stmt_count->execute();
-        $stmt_count->store_result();
-        $totalRecords = 0;
-        $stmt_count->bind_result($totalRecords);
-        $stmt_count->fetch();
-        $stmt_count->close();
+            (SELECT 
+                pay.id, 
+                p.name AS partnerName, 
+                pay.date, 
+                CONCAT('پرداخت بابت فاکتور خرید #', pay.invoiceId) AS type, 
+                pay.amount, 
+                pay.description, 
+                'payment_out' AS source,
+                'PAYMENT_OUT' AS original_type,
+                a.name as accountName
+            FROM payments pay
+            JOIN accounts a ON pay.account_id = a.id
+            JOIN partners p ON a.partner_id = p.id
+            WHERE pay.invoiceType = 'purchase' AND pay.type = 'cash' AND a.partner_id IS NOT NULL)
+        ";
 
-        // Data
-        $data_sql = "$select $from $where ORDER BY {$orderByClause} {$sortOrder} LIMIT ? OFFSET ?";
-        $data_params = $search_params;
-        $data_params[] = $limit;
-        $data_params[] = $offset;
-        $data_param_types = $search_param_types . 'ii';
+        $this->alias = 'all_transactions';
+        $this->select = "SELECT *";
+        $this->from = "FROM ({$unionQuery}) AS {$this->alias}";
         
-        $stmt_data = $this->conn->prepare($data_sql);
-        $bind_params_safely($stmt_data, $data_param_types, $data_params);
-        $stmt_data->execute();
-        
-        $stmt_data->store_result();
-        $meta = $stmt_data->result_metadata();
-        $fields = []; $row = [];
-        while ($field = $meta->fetch_field()) {
-            $fields[] = &$row[$field->name];
-        }
-        call_user_func_array([$stmt_data, 'bind_result'], $fields);
-        
-        $data = [];
-        while ($stmt_data->fetch()) {
-            $c = [];
-            foreach($row as $key => $val) $c[$key] = $val;
-            $data[] = $c;
-        }
-        $stmt_data->close();
-        
-        return ['data' => $data, 'totalRecords' => $totalRecords];
+        $this->allowedFilters = ['partnerName', 'type', 'amount', 'description', 'accountName'];
+        $this->allowedSorts = ['date', 'partnerName', 'amount'];
     }
 }

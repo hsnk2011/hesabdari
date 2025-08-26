@@ -1,7 +1,7 @@
 // /js/app.js
 
 const App = (function () {
-    let appCache = { customers: [], suppliers: [], products: [], partners: [], checks: [], accounts: [] };
+    let appCache = { partners: [], accounts: [] }; // Cache is now smaller
     let managers = {};
 
     function getManager(name) {
@@ -18,60 +18,137 @@ const App = (function () {
 
     async function fetchInitialCache() {
         UI.showLoader();
-        const [customers, suppliers, products, partners, accounts, checksResponse] = await Promise.all([
-            Api.call('get_full_customers_list'),
-            Api.call('get_full_suppliers_list'),
-            Api.call('get_full_products_list'),
+        // REMOVED calls for customers, suppliers, products, and checks to improve performance.
+        const [partners, accounts] = await Promise.all([
             Api.call('get_partners'),
-            Api.call('get_full_accounts_list'),
-            Api.call('get_paginated_data', { tableName: 'checks', limit: 1000, sortBy: 'id', sortOrder: 'DESC' })
+            Api.call('get_full_accounts_list')
         ]);
         appCache = {
-            customers: customers || [],
-            suppliers: suppliers || [],
-            products: products || [],
+            // customers, suppliers, products are no longer cached globally.
             partners: partners || [],
             accounts: accounts || [],
-            checks: checksResponse ? checksResponse.data : []
         };
 
         PartnerManager.refreshUI();
+        // These functions are now re-written to use AJAX instead of cache.
         populatePersonSelectForReports();
         populateAccountSelectForReports();
+        populateProductSelectForReports();
         UI.hideLoader();
     }
 
     function populatePersonSelectForReports() {
-        const personSelect = $('#report-person-select').empty();
-        personSelect.append('<option></option>');
+        const personSelect = $('#report-person-select');
+        if (personSelect.data('select2')) { personSelect.select2('destroy'); }
+        personSelect.empty().append('<option></option>'); // Clear previous options
 
-        personSelect.append('<optgroup label="مشتریان"></optgroup>');
-        (appCache.customers || []).forEach(c => personSelect.append(`<option value="customer-${c.id}">${c.name}</option>`));
+        personSelect.select2({
+            theme: 'bootstrap-5',
+            dir: 'rtl',
+            placeholder: "جستجو و انتخاب شخص...",
+            ajax: {
+                transport: async function (params, success, failure) {
+                    // This custom transport uses our Api.call module
+                    const entityMap = {
+                        'مشتریان': 'customers',
+                        'تامین‌کنندگان': 'suppliers',
+                        'شرکا': 'partners' // A small list, but we keep it consistent
+                    };
+                    const entityType = entityMap[params.data.group] || null;
 
-        personSelect.append('<optgroup label="تامین‌کنندگان"></optgroup>');
-        (appCache.suppliers || []).forEach(s => personSelect.append(`<option value="supplier-${s.id}">${s.name}</option>`));
-
-        personSelect.append('<optgroup label="شرکا"></optgroup>');
-        (appCache.partners || []).forEach(p => personSelect.append(`<option value="partner-${p.id}">${p.name}</option>`));
-
-        if (personSelect.data('select2')) {
-            personSelect.select2('destroy');
-        }
-        personSelect.select2({ theme: 'bootstrap-5', dir: 'rtl', placeholder: "جستجو و انتخاب شخص..." });
+                    // For partners, just filter the local cache as it's small and already loaded
+                    if (entityType === 'partners') {
+                        const filteredPartners = App.getCache().partners
+                            .filter(p => p.name.includes(params.data.term || ''))
+                            .map(p => ({ id: `partner-${p.id}`, text: p.name }));
+                        return success({ results: filteredPartners });
+                    }
+                    
+                    // For customers and suppliers, make an API call
+                    if (entityType) {
+                        const data = await Api.call('search_entities', {
+                            entityType: entityType,
+                            term: params.data.term || ''
+                        });
+                        if (data && data.results) {
+                            // Format the ID to include the type
+                            const formattedResults = data.results.map(item => ({
+                                ...item,
+                                id: `${entityType.slice(0, -1)}-${item.id}`
+                            }));
+                            success({ results: formattedResults });
+                        } else {
+                            failure();
+                        }
+                    }
+                },
+                processResults: function (data) {
+                    return {
+                        results: data.results
+                    };
+                },
+                cache: true
+            },
+            // Custom template to show optgroups in results
+            templateResult: function (data) {
+                if (!data.id) { return data.text; }
+                const $container = $(
+                    '<span>' + data.text + '</span>'
+                );
+                return $container;
+            },
+            // A custom query function to create optgroups for searching
+            query: function (params) {
+                const results = [];
+                if (params.term && params.term !== '') {
+                    results.push({ id: 'group_customers', text: 'جستجو در مشتریان', group: 'مشتریان', term: params.term });
+                    results.push({ id: 'group_suppliers', text: 'جستجو در تامین‌کنندگان', group: 'تامین‌کنندگان', term: params.term });
+                } else {
+                    // Show partners by default if search is empty
+                    const partners = App.getCache().partners.map(p => ({ id: `partner-${p.id}`, text: p.name }));
+                    results.push({ text: 'شرکا', children: partners });
+                }
+                params.callback({ results: results });
+            }
+        });
     }
 
+
     function populateAccountSelectForReports() {
-        const accountSelect = $('#report-account-select').empty();
-        accountSelect.append('<option></option>');
-
-        (appCache.accounts || []).forEach(acc => {
-            accountSelect.append(`<option value="${acc.id}">${acc.name}</option>`);
-        });
-
-        if (accountSelect.data('select2')) {
-            accountSelect.select2('destroy');
-        }
+        // This remains the same as accounts are still cached (small dataset)
+        const accountSelect = $('#report-account-select').empty().append('<option></option>');
+        (appCache.accounts || []).forEach(acc => accountSelect.append(`<option value="${acc.id}">${acc.name}</option>`));
+        if (accountSelect.data('select2')) { accountSelect.select2('destroy'); }
         accountSelect.select2({ theme: 'bootstrap-5', dir: 'rtl', placeholder: "جستجو و انتخاب حساب..." });
+    }
+
+    function populateProductSelectForReports() {
+        const productSelect = $('#report-product-select');
+        if (productSelect.data('select2')) { productSelect.select2('destroy'); }
+        productSelect.empty().append('<option></option>'); // Clear previous options
+
+        productSelect.select2({
+            theme: 'bootstrap-5',
+            dir: 'rtl',
+            placeholder: "جستجو و انتخاب محصول...",
+            ajax: {
+                transport: async function (params, success, failure) {
+                    const data = await Api.call('search_entities', { entityType: 'products', term: params.data.q || '' });
+                    if (data && data.results) {
+                        success(data);
+                    } else {
+                        failure();
+                    }
+                },
+                processResults: function (data) {
+                    return {
+                        results: data.results
+                    };
+                },
+                delay: 250, // Add a small delay to avoid excessive requests
+                cache: true
+            }
+        });
     }
 
     function initEntityManagers() {
@@ -105,7 +182,7 @@ const App = (function () {
                 nationalId: $('#customer-national-id').val(),
                 initial_balance: $('#customer-initial-balance').val().replace(/,/g, '')
             }),
-            refreshCache: true
+            refreshCache: false // No longer needs to refresh the main cache
         });
 
         managers['suppliers'] = createEntityManager({
@@ -138,7 +215,7 @@ const App = (function () {
                 economicCode: $('#supplier-economic-code').val(),
                 initial_balance: $('#supplier-initial-balance').val().replace(/,/g, '')
             }),
-            refreshCache: true
+            refreshCache: false // No longer needs to refresh the main cache
         });
 
         managers['products'] = createEntityManager({
@@ -192,7 +269,7 @@ const App = (function () {
                 }
                 $('#product-stock-container').append(row);
             },
-            refreshCache: true
+            refreshCache: false // No longer needs to refresh the main cache
         });
 
         managers['expenses'] = createEntityManager({
@@ -252,7 +329,7 @@ const App = (function () {
             renderTable: (data) => {
                 const getCheckStatusText = (s, t) => {
                     if (!s) return '';
-                    return t === 'received' ? { in_hand: 'نزد ما', endorsed: 'واگذار شده', cashed: 'وصول شده' }[s] || s : { payable: 'پرداختنی', cashed: 'پاس شده' }[s] || s;
+                    return t === 'received' ? { in_hand: 'نزد ما', endorsed: 'واگذار شده', cashed: 'وصول شده', bounced: 'برگشتی' }[s] || s : { payable: 'پرداختنی', cashed: 'پاس شده', bounced: 'برگشتی' }[s] || s;
                 };
                 const body = $('#checks-table-body').empty();
                 if (!data || !data.length) return body.html('<tr><td colspan="8" class="text-center">چکی یافت نشد.</td></tr>');
@@ -266,6 +343,9 @@ const App = (function () {
                     let actions = '';
                     if (c.type === 'received' && c.status === 'in_hand') {
                         actions = `<button class="btn btn-sm btn-success btn-cash-check" data-id="${c.id}" title="وصول چک"><i class="bi bi-check-circle-fill"></i></button>`;
+                    }
+                    else if (c.type === 'payable' && c.status === 'payable') {
+                        actions = `<button class="btn btn-sm btn-primary btn-clear-check" data-id="${c.id}" title="ثبت پاس شدن چک"><i class="bi bi-check-all"></i></button>`;
                     }
 
                     body.append(`<tr>
@@ -399,21 +479,15 @@ const App = (function () {
             const reportType = $(this).val();
             $('#report-person-controls').toggle(reportType === 'persons');
             $('#report-account-controls').toggle(reportType === 'accounts');
+            $('#report-product-controls').toggle(reportType === 'inventory-ledger');
             $('#report-date-filter').toggle(!['inventory', 'inventory-value'].includes(reportType));
         }).trigger('change');
 
-        $('#generate-report-btn').on('click', async function () {
-            UI.showLoader();
-            const reportData = await Api.call('get_all_data_for_reports');
-            UI.hideLoader();
-            if (reportData) {
-                const reportType = $('#report-type').val();
-                const container = $('#report-results-container');
-                ReportGenerator.generate(reportType, reportData, container);
-            }
+        $('#generate-report-btn').on('click', function () {
+            const reportType = $('#report-type').val();
+            const container = $('#report-results-container');
+            ReportGenerator.generate(reportType, container);
         });
-
-        $('#print-report-btn').on('click', () => ReportGenerator.print());
 
         $('body').on('hidden.bs.modal', '.modal', function () {
             if (document.activeElement && document.activeElement.blur) {
@@ -421,27 +495,70 @@ const App = (function () {
             }
         });
 
-        $('body').on('click', '.btn-cash-check', function () {
+        $('body').on('click', '.report-link', async function (e) {
+            e.preventDefault();
+            const id = $(this).data('id');
+            const type = $(this).data('type');
+
+            if (!id || !type) return;
+
+            UI.showLoader();
+            const entityData = await Api.call('get_entity_by_id', { entityType: type, id: id });
+            UI.hideLoader();
+
+            if (entityData) {
+                if (type === 'salesInvoice') {
+                    InvoiceManager.prepareInvoiceModal('sales', entityData);
+                } else if (type === 'purchaseInvoice') {
+                    InvoiceManager.prepareInvoiceModal('purchase', entityData);
+                } else if (type === 'expense') {
+                    App.getManager('expenses').prepareModal(entityData);
+                }
+            }
+        });
+
+        $('body').on('click', '.btn-clear-check', function () {
             const checkId = $(this).data('id');
+            const modal = $('#cashCheckModal');
+            modal.find('.modal-title').text('ثبت پاس شدن چک');
+            modal.find('p').text('چک از کدام حساب برداشت (پاس) شد؟');
             $('#cash-check-id').val(checkId);
+            $('#cash-check-form').data('action', 'clear_payable_check');
 
             const accountSelect = $('#cash-check-account-id').empty().append('<option value="">-- انتخاب کنید --</option>');
             App.getCache().accounts.forEach(acc => {
                 accountSelect.append(`<option value="${acc.id}">${acc.name}</option>`);
             });
 
-            $('#cashCheckModal').modal('show');
+            modal.modal('show');
+        });
+
+        $('body').on('click', '.btn-cash-check', function () {
+            const checkId = $(this).data('id');
+            const modal = $('#cashCheckModal');
+            modal.find('.modal-title').text('وصول چک');
+            modal.find('p').text('چک به کدام حساب واریز شود؟');
+            $('#cash-check-id').val(checkId);
+            $('#cash-check-form').data('action', 'cash_check');
+
+            const accountSelect = $('#cash-check-account-id').empty().append('<option value="">-- انتخاب کنید --</option>');
+            App.getCache().accounts.forEach(acc => {
+                accountSelect.append(`<option value="${acc.id}">${acc.name}</option>`);
+            });
+
+            modal.modal('show');
         });
 
         $('#cash-check-form').on('submit', async function (e) {
             e.preventDefault();
+            const action = $(this).data('action');
             const data = {
                 checkId: $('#cash-check-id').val(),
                 accountId: $('#cash-check-account-id').val()
             };
 
             UI.showLoader();
-            const result = await Api.call('cash_check', data);
+            const result = await Api.call(action, data);
             UI.hideLoader();
 
             if (result?.success) {
@@ -464,10 +581,7 @@ const App = (function () {
         InvoiceManager.init();
         AccountManager.init();
 
-        ReportGenerator.init({
-            formatCurrency: UI.formatCurrency,
-            toEnglishDigits: UI.toEnglishDigits
-        });
+        ReportGenerator.init();
 
         $('#add-sales-invoice-btn').on('click', () => InvoiceManager.prepareInvoiceModal('sales'));
         $('#add-purchase-invoice-btn').on('click', () => InvoiceManager.prepareInvoiceModal('purchase'));

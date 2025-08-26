@@ -122,4 +122,50 @@ class Product extends BaseModel {
         
         return $products;
     }
+    
+    /**
+     * Searches for products by name and attaches their stock information.
+     * Used for AJAX-based Select2 dropdowns.
+     *
+     * @param string $term The search term.
+     * @return array A list of products matching the term, with stock info.
+     */
+    public function searchByNameWithStock($term) {
+        $searchTerm = "%{$term}%";
+        $stmt = $this->conn->prepare("SELECT id, name, description FROM `{$this->tableName}` WHERE name LIKE ? LIMIT 30");
+        $stmt->bind_param("s", $searchTerm);
+        $stmt->execute();
+        
+        $stmt->store_result();
+        $meta = $stmt->result_metadata();
+        $fields = []; $row = [];
+        while ($field = $meta->fetch_field()) { $fields[] = &$row[$field->name]; }
+        call_user_func_array([$stmt, 'bind_result'], $fields);
+        $products = [];
+        while ($stmt->fetch()) {
+            $c = [];
+            foreach($row as $key => $val) { $c[$key] = $val; }
+            $products[] = $c;
+        }
+        $stmt->close();
+
+        if (empty($products)) {
+            return [];
+        }
+
+        $productIds = array_column($products, 'id');
+        $ids_str = implode(',', $productIds);
+        $all_stock = $this->conn->query("SELECT * FROM `product_stock` WHERE product_id IN ($ids_str)")->fetch_all(MYSQLI_ASSOC);
+
+        foreach ($products as &$product) {
+            $product['stock'] = [];
+            foreach ($all_stock as $stock_item) {
+                if ($stock_item['product_id'] == $product['id']) {
+                    $product['stock'][] = $stock_item;
+                }
+            }
+        }
+        
+        return $products;
+    }
 }

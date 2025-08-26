@@ -65,14 +65,16 @@ const PartnerManager = (function () {
     }
 
     async function handlePartnerDelete(id) {
-        if (confirm(`آیا از حذف این شریک مطمئن هستید؟`)) {
-            UI.showLoader();
-            const result = await Api.call(`delete_partner`, { id });
-            UI.hideLoader();
-            if (result?.success) {
-                await App.fetchInitialCache();
+        UI.confirmAction(`آیا از حذف این شریک مطمئن هستید؟`, async (confirmed) => {
+            if (confirmed) {
+                UI.showLoader();
+                const result = await Api.call(`delete_partner`, { id });
+                UI.hideLoader();
+                if (result?.success) {
+                    await App.fetchInitialCache();
+                }
             }
-        }
+        });
     }
 
     function resetTransactionForm() {
@@ -85,11 +87,20 @@ const PartnerManager = (function () {
 
     function prepareTransactionFormForEdit(transaction) {
         editingTransactionId = transaction.id;
-        $('#partner-select').val(transaction.partnerId);
-        $('#partner-transaction-type').val(transaction.type);
+        const partner = App.getCache().partners.find(p => p.name === transaction.partnerName);
+        if (!partner) {
+            alert('اطلاعات شریک برای ویرایش یافت نشد.');
+            return;
+        }
+
+        $('#partner-select').val(partner.id);
+        $('#partner-transaction-type').val(transaction.original_type);
         $('#partner-transaction-date').val(transaction.date);
         $('#partner-transaction-amount').val(Number(transaction.amount).toLocaleString('en-US'));
-        $('#partner-transaction-account-id').val(transaction.account_id);
+
+        const account = App.getCache().accounts.find(acc => acc.name === transaction.accountName);
+        if (account) $('#partner-transaction-account-id').val(account.id);
+
         $('#partner-transaction-desc').val(transaction.description);
 
         const form = $('#partner-transaction-form');
@@ -107,7 +118,7 @@ const PartnerManager = (function () {
             id: editingTransactionId,
             partnerId: $('#partner-select').val(),
             type: $('#partner-transaction-type').val(),
-            date: $('#partner-transaction-date').val(),
+            date: UI.toGregorian ? UI.toGregorian('#partner-transaction-date') : $('#partner-transaction-date').val(),
             amount: $('#partner-transaction-amount').val().replace(/,/g, ''),
             account_id: $('#partner-transaction-account-id').val(),
             description: $('#partner-transaction-desc').val()
@@ -127,21 +138,38 @@ const PartnerManager = (function () {
         if (!data || !data.length) {
             return body.html('<tr><td colspan="7" class="text-center">تراکنشی برای شرکا ثبت نشده است.</td></tr>');
         }
+
         data.forEach(pt => {
-            const typeText = pt.type === 'DEPOSIT' ? 'واریز' : 'برداشت';
-            const amountClass = pt.type === 'DEPOSIT' ? 'text-success' : 'text-danger';
+            let actions = '';
+            if (pt.source === 'partner_transaction') {
+                actions = `
+                    <button class="btn btn-sm btn-warning btn-edit-tx"><i class="bi bi-pencil-square"></i></button>
+                    <button class="btn btn-sm btn-danger btn-delete" data-type="partnerTransaction" data-id="${pt.id}"><i class="bi bi-trash"></i></button>
+                `;
+            }
+
+            let amountClass = '';
+            let amountText = '';
+            if (pt.original_type === 'WITHDRAWAL' || pt.original_type === 'PAYMENT_IN') {
+                amountClass = 'text-success';
+                amountText = UI.formatCurrency(pt.amount);
+            } else {
+                amountClass = 'text-danger';
+                amountText = `(${UI.formatCurrency(pt.amount)})`;
+            }
+
+            // *** START: FIX - Corrected table row structure ***
             const row = $(`<tr>
                 <td>${pt.partnerName || ''}</td>
                 <td>${pt.date}</td>
-                <td>${typeText}</td>
-                <td class="${amountClass}">${UI.formatCurrency(pt.amount)}</td>
-                <td>${pt.accountName || 'N/A'}</td>
+                <td>${pt.type}</td>
+                <td class="${amountClass}">${amountText}</td>
+                <td>${pt.accountName || 'N/A'}</td> 
                 <td>${pt.description || ''}</td>
-                <td>
-                    <button class="btn btn-sm btn-warning btn-edit-tx"><i class="bi bi-pencil-square"></i></button>
-                    <button class="btn btn-sm btn-danger btn-delete" data-type="partnerTransaction" data-id="${pt.id}"><i class="bi bi-trash"></i></button>
-                </td>
+                <td>${actions}</td>
             </tr>`);
+            // *** END: FIX ***
+
             row.find('.btn-edit-tx').data('entity', pt);
             body.append(row);
         });
@@ -176,7 +204,7 @@ const PartnerManager = (function () {
         renderPartnerSelect();
 
         const accountSelect = $('#partner-transaction-account-id').empty().append('<option value="">-- انتخاب کنید --</option>');
-        App.getCache().accounts.forEach(acc => {
+        App.getCache().accounts.filter(acc => !acc.partner_id).forEach(acc => {
             accountSelect.append(`<option value="${acc.id}">${acc.name}</option>`);
         });
     }
