@@ -1,22 +1,22 @@
 <?php
 // /api/controllers/InventoryController.php
-require_once __DIR__ . '/../models/Warehouse.php';
+// require_once __DIR__ . '/../models/Warehouse.php'; // Temporarily disabled as the file is missing
 require_once __DIR__ . '/../models/Product.php';
 
 class InventoryController {
     private $conn;
-    private $warehouseModel;
+    // private $warehouseModel; // Temporarily disabled
     private $productModel;
 
     public function __construct($db) {
         $this->conn = $db;
-        $this->warehouseModel = new Warehouse($db);
+        // $this->warehouseModel = new Warehouse($db); // Temporarily disabled
         $this->productModel = new Product($db);
     }
 
     public function listWarehouses($data) {
-        $list = $this->warehouseModel->listActive();
-        send_json(['warehouses'=>$list]);
+        // This feature is disabled because the Warehouse.php model is missing.
+        send_json(['warehouses'=>[]]);
     }
 
     // Transfer stock between warehouses/bins
@@ -27,31 +27,37 @@ class InventoryController {
         $qty = intval($data['quantity'] ?? 0);
         $toBin = trim($data['to_bin'] ?? '');
 
-        if (!$productId || !$toWh || $qty <= 0) { send_json(['error'=>'اطلاعات انتقال ناقص است'], 400); }
+        if (!$productId || !$toWh || $qty <= 0) {
+            send_json(['error'=>'اطلاعات انتقال ناقص است'], 400);
+            return;
+        }
 
         $this->conn->begin_transaction();
         try {
             if ($fromWh) {
-                $stmt = $this->conn->prepare("UPDATE product_stock SET quantity = GREATEST(quantity - ?, 0) WHERE product_id = ? AND warehouse_id = ?");
-                $stmt->bind_param("iii", $qty, $productId, $fromWh);
-                $stmt->execute(); $stmt->close();
+                $stmtUpdateFrom = $this->conn->prepare("UPDATE product_stock SET quantity = GREATEST(quantity - ?, 0) WHERE product_id = ? AND warehouse_id = ?");
+                $stmtUpdateFrom->bind_param("iii", $qty, $productId, $fromWh);
+                $stmtUpdateFrom->execute();
+                $stmtUpdateFrom->close();
             }
-            // Upsert to destination
-            $stmt = $this->conn->prepare("SELECT id, quantity FROM product_stock WHERE product_id = ? AND warehouse_id = ? LIMIT 1");
-            $stmt->bind_param("ii", $productId, $toWh);
-            $stmt->execute();
-            $row = db_stmt_get_result($stmt)->fetch_assoc();
-            $stmt->close();
+            
+            $stmtSelectTo = $this->conn->prepare("SELECT id, quantity FROM product_stock WHERE product_id = ? AND warehouse_id = ? LIMIT 1");
+            $stmtSelectTo->bind_param("ii", $productId, $toWh);
+            $stmtSelectTo->execute();
+            $result = db_stmt_to_assoc_array($stmtSelectTo);
+            $row = $result[0] ?? null;
 
             if ($row) {
                 $newQ = $row['quantity'] + $qty;
-                $stmt = $this->conn->prepare("UPDATE product_stock SET quantity = ?, bin_location = ? WHERE id = ?");
-                $stmt->bind_param("isi", $newQ, $toBin, $row['id']);
-                $stmt->execute(); $stmt->close();
+                $stmtUpdateTo = $this->conn->prepare("UPDATE product_stock SET quantity = ?, bin_location = ? WHERE id = ?");
+                $stmtUpdateTo->bind_param("isi", $newQ, $toBin, $row['id']);
+                $stmtUpdateTo->execute();
+                $stmtUpdateTo->close();
             } else {
-                $stmt = $this->conn->prepare("INSERT INTO product_stock (product_id, warehouse_id, bin_location, quantity) VALUES (?, ?, ?, ?)");
-                $stmt->bind_param("iisi", $productId, $toWh, $toBin, $qty);
-                $stmt->execute(); $stmt->close();
+                $stmtInsertTo = $this->conn->prepare("INSERT INTO product_stock (product_id, warehouse_id, bin_location, quantity) VALUES (?, ?, ?, ?)");
+                $stmtInsertTo->bind_param("iisi", $productId, $toWh, $toBin, $qty);
+                $stmtInsertTo->execute();
+                $stmtInsertTo->close();
             }
 
             $this->conn->commit();

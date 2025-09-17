@@ -4,32 +4,103 @@ require_once __DIR__ . '/BaseModel.php';
 
 class Product extends BaseModel {
     protected $tableName = 'products';
-    protected $allowedFilters = ['name', 'description'];
-    protected $allowedSorts = ['id', 'name'];
+    protected $allowedFilters = ['p.name', 'p.description']; // Aliased for new query
+    protected $allowedSorts = ['id', 'name', 'total_stock'];
 
-    /**
-     * Overrides the base getPaginated method to attach stock information to each product.
-     *
-     * @param array $input The user input for pagination, sorting, and search.
-     * @return array An array containing the paginated product data with stock info.
-     */
+    public function __construct($db) {
+        parent::__construct($db);
+        $this->alias = 'p'; // Set alias for the products table
+    }
+
     public function getPaginated($input) {
-        // First, get the paginated product data from the parent method.
-        $paginatedResult = parent::getPaginated($input);
-        $products = $paginatedResult['data'];
+        // --- CUSTOM PAGINATION LOGIC FOR PRODUCTS TO SORT BY STOCK ---
 
-        if (empty($products)) {
-            return $paginatedResult; // Return early if no products were found.
+        $page = isset($input['currentPage']) ? max(1, intval($input['currentPage'])) : 1;
+        $limit = isset($input['limit']) ? intval($input['limit']) : 15;
+        $offset = ($page - 1) * $limit;
+
+        // Default sort: by stock quantity descending, then by name ascending
+        $sortBy = $input['sortBy'] ?? 'total_stock';
+        $sortOrder = in_array(strtoupper($input['sortOrder'] ?? 'DESC'), ['ASC', 'DESC']) ? strtoupper($input['sortOrder']) : 'DESC';
+        $searchTerm = $input['searchTerm'] ?? '';
+        
+        // Build the base query with a JOIN to get total stock for sorting
+        $this->select = "SELECT p.*, COALESCE(s.total_quantity, 0) as total_stock";
+        $this->from = "FROM `{$this->tableName}` as p";
+        $this->join = "LEFT JOIN (SELECT product_id, SUM(quantity) as total_quantity FROM product_stock GROUP BY product_id) s ON p.id = s.product_id";
+        
+        $finalWhere = "WHERE p.entity_id = ?";
+        $params = [$_SESSION['current_entity_id']];
+        $param_types = 'i';
+
+        if (!empty($searchTerm) && !empty($this->allowedFilters)) {
+            $search_parts = [];
+            foreach ($this->allowedFilters as $col) {
+                $search_parts[] = "$col LIKE ?";
+            }
+            $finalWhere .= " AND (" . implode(' OR ', $search_parts) . ")";
+            
+            $wildcard = "%{$searchTerm}%";
+            foreach ($this->allowedFilters as $_) {
+                $params[] = $wildcard;
+                $param_types .= 's';
+            }
         }
 
-        // Get the IDs of the fetched products.
+        // Custom Order By Logic
+        $orderByClause = "ORDER BY total_stock DESC, p.name ASC"; // Default sort
+        if (in_array($sortBy, $this->allowedSorts)) {
+            if ($sortBy === 'total_stock') {
+                 $orderByClause = "ORDER BY total_stock {$sortOrder}, p.name ASC";
+            } else {
+                 $orderByClause = "ORDER BY p.{$sortBy} {$sortOrder}";
+            }
+        }
+        
+        // Get total records count with the same filters
+        $count_sql = "SELECT COUNT(p.id) as total {$this->from} {$this->join} {$finalWhere}";
+        $stmt_count = $this->conn->prepare($count_sql);
+        if (!empty($params)) {
+            $stmt_count->bind_param($param_types, ...$params);
+        }
+        $stmt_count->execute();
+        $totalRecords = 0;
+        $stmt_count->bind_result($totalRecords);
+        $stmt_count->fetch();
+        $stmt_count->close();
+
+        // Get paginated data
+        $data_sql = "{$this->select} {$this->from} {$this->join} {$finalWhere} {$orderByClause} LIMIT ? OFFSET ?";
+        $data_params = $params;
+        $data_params[] = $limit;
+        $data_params[] = $offset;
+        $data_param_types = $param_types . 'ii';
+        
+        $stmt_data = $this->conn->prepare($data_sql);
+        if (!empty($data_params)) {
+             $refs = [];
+             foreach ($data_params as $key => $value) $refs[$key] = &$data_params[$key];
+             call_user_func_array([$stmt_data, 'bind_param'], array_merge([$data_param_types], $refs));
+        }
+        $stmt_data->execute();
+        $products = db_stmt_to_assoc_array($stmt_data);
+        
+        $paginatedResult = ['data' => $products, 'totalRecords' => $totalRecords];
+
+        // --- ATTACH DETAILED STOCK INFORMATION (as before) ---
+        if (empty($products)) {
+            return $paginatedResult;
+        }
+
         $productIds = array_column($products, 'id');
-        $ids_str = implode(',', $productIds);
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+        $types = str_repeat('i', count($productIds));
 
-        // Fetch all stock information for these specific products in a single query.
-        $all_stock = $this->conn->query("SELECT * FROM `product_stock` WHERE product_id IN ($ids_str)")->fetch_all(MYSQLI_ASSOC);
+        $stmt_stock_details = $this->conn->prepare("SELECT * FROM `product_stock` WHERE product_id IN ($placeholders)");
+        $stmt_stock_details->bind_param($types, ...$productIds);
+        $stmt_stock_details->execute();
+        $all_stock = db_stmt_to_assoc_array($stmt_stock_details);
 
-        // Map the stock items to their respective products.
         foreach ($products as &$product) {
             $product['stock'] = [];
             foreach ($all_stock as $stock_item) {
@@ -39,12 +110,10 @@ class Product extends BaseModel {
             }
         }
         
-        // Update the data in the result and return it.
         $paginatedResult['data'] = $products;
         return $paginatedResult;
     }
 
-    // ... (متدهای save و getFullListWithStock بدون تغییر باقی می‌مانند) ...
     public function save($data) {
         if (empty(trim($data['name']))) {
             return ['error' => 'نام طرح محصول الزامی است.', 'statusCode' => 400];
@@ -61,8 +130,9 @@ class Product extends BaseModel {
                 $stmt = $this->conn->prepare("UPDATE `{$this->tableName}` SET name = ?, description = ? WHERE id = ?");
                 $stmt->bind_param("ssi", $name, $description, $productId);
             } else {
-                $stmt = $this->conn->prepare("INSERT INTO `{$this->tableName}` (name, description) VALUES (?, ?)");
-                $stmt->bind_param("ss", $name, $description);
+                $entity_id = $_SESSION['current_entity_id'];
+                $stmt = $this->conn->prepare("INSERT INTO `{$this->tableName}` (entity_id, name, description) VALUES (?, ?, ?)");
+                $stmt->bind_param("iss", $entity_id, $name, $description);
             }
             
             if (!$stmt->execute()) {
@@ -108,54 +178,25 @@ class Product extends BaseModel {
     }
 
     public function getFullListWithStock() {
-        $products = $this->conn->query("SELECT * FROM `{$this->tableName}` ORDER BY name ASC")->fetch_all(MYSQLI_ASSOC);
-        $all_stock = $this->conn->query("SELECT * FROM `product_stock`")->fetch_all(MYSQLI_ASSOC);
-
-        foreach ($products as &$product) {
-            $product['stock'] = [];
-            foreach ($all_stock as $stock_item) {
-                if ($stock_item['product_id'] == $product['id']) {
-                    $product['stock'][] = $stock_item;
-                }
-            }
-        }
+        $entity_id = $_SESSION['current_entity_id'];
         
-        return $products;
-    }
-    
-    /**
-     * Searches for products by name and attaches their stock information.
-     * Used for AJAX-based Select2 dropdowns.
-     *
-     * @param string $term The search term.
-     * @return array A list of products matching the term, with stock info.
-     */
-    public function searchByNameWithStock($term) {
-        $searchTerm = "%{$term}%";
-        $stmt = $this->conn->prepare("SELECT id, name, description FROM `{$this->tableName}` WHERE name LIKE ? LIMIT 30");
-        $stmt->bind_param("s", $searchTerm);
-        $stmt->execute();
-        
-        $stmt->store_result();
-        $meta = $stmt->result_metadata();
-        $fields = []; $row = [];
-        while ($field = $meta->fetch_field()) { $fields[] = &$row[$field->name]; }
-        call_user_func_array([$stmt, 'bind_result'], $fields);
-        $products = [];
-        while ($stmt->fetch()) {
-            $c = [];
-            foreach($row as $key => $val) { $c[$key] = $val; }
-            $products[] = $c;
-        }
-        $stmt->close();
+        $stmt_products = $this->conn->prepare("SELECT * FROM `{$this->tableName}` WHERE entity_id = ? ORDER BY name ASC");
+        $stmt_products->bind_param("i", $entity_id);
+        $stmt_products->execute();
+        $products = db_stmt_to_assoc_array($stmt_products);
 
         if (empty($products)) {
             return [];
         }
-
+        
         $productIds = array_column($products, 'id');
-        $ids_str = implode(',', $productIds);
-        $all_stock = $this->conn->query("SELECT * FROM `product_stock` WHERE product_id IN ($ids_str)")->fetch_all(MYSQLI_ASSOC);
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+        $types = str_repeat('i', count($productIds));
+
+        $stmt_stock_details = $this->conn->prepare("SELECT * FROM `product_stock` WHERE product_id IN ($placeholders)");
+        $stmt_stock_details->bind_param($types, ...$productIds);
+        $stmt_stock_details->execute();
+        $all_stock = db_stmt_to_assoc_array($stmt_stock_details);
 
         foreach ($products as &$product) {
             $product['stock'] = [];

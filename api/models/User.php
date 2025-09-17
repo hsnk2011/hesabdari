@@ -42,7 +42,7 @@ class User extends BaseModel {
     }
 
     /**
-     * Attempts to log in a user. (Compatible version without get_result)
+     * Attempts to log in a user with rate limiting.
      * @param array $data Contains 'username' and 'password'.
      * @return array User data on success, error on failure.
      */
@@ -51,30 +51,62 @@ class User extends BaseModel {
             return ['error' => 'نام کاربری و رمز عبور الزامی است.', 'statusCode' => 400];
         }
 
-        $stmt = $this->conn->prepare("SELECT id, username, password_hash FROM `{$this->tableName}` WHERE username = ?");
+        $max_attempts = 5; // حداکثر تلاش ناموفق
+        $lockout_time_minutes = 15; // مدت زمان قفل شدن به دقیقه
+
+        $stmt = $this->conn->prepare("SELECT id, username, password_hash, failed_login_attempts, lockout_until FROM `{$this->tableName}` WHERE username = ?");
         $stmt->bind_param("s", $data['username']);
         $stmt->execute();
-        $stmt->store_result(); // Important for num_rows and bind_result
+        $user_data = db_stmt_to_assoc_array($stmt);
 
-        if ($stmt->num_rows == 1) {
-            $id = null;
-            $username = null;
-            $password_hash = null;
-            $stmt->bind_result($id, $username, $password_hash);
-            $stmt->fetch();
+        if (count($user_data) == 1) {
+            $user = $user_data[0];
+            
+            if ($user['lockout_until'] !== null) {
+                $now = new DateTime();
+                $lockout_time = new DateTime($user['lockout_until']);
+                if ($now < $lockout_time) {
+                    $remaining_seconds = $lockout_time->getTimestamp() - $now->getTimestamp();
+                    $remaining_minutes = ceil($remaining_seconds / 60);
+                    return ['error' => "حساب شما به دلیل تلاش‌های ناموفق متعدد، برای {$remaining_minutes} دقیقه قفل شده است.", 'statusCode' => 429];
+                }
+            }
 
-            if (password_verify($data['password'], $password_hash)) {
-                $stmt->close();
-                return ['success' => true, 'user' => ['id' => $id, 'username' => $username]];
+            if (password_verify($data['password'], $user['password_hash'])) {
+                $update_stmt = $this->conn->prepare("UPDATE `{$this->tableName}` SET failed_login_attempts = 0, lockout_until = NULL WHERE id = ?");
+                $update_stmt->bind_param("i", $user['id']);
+                $update_stmt->execute();
+                $update_stmt->close();
+                
+                return ['success' => true, 'user' => ['id' => $user['id'], 'username' => $user['username']]];
+            } else {
+                $failed_attempts = $user['failed_login_attempts'] + 1;
+                
+                if ($failed_attempts >= $max_attempts) {
+                    $now = new DateTime();
+                    $now->add(new DateInterval("PT{$lockout_time_minutes}M"));
+                    $new_lockout_until = $now->format('Y-m-d H:i:s');
+                    
+                    $update_stmt = $this->conn->prepare("UPDATE `{$this->tableName}` SET failed_login_attempts = ?, lockout_until = ? WHERE id = ?");
+                    $update_stmt->bind_param("isi", $failed_attempts, $new_lockout_until, $user['id']);
+                    $update_stmt->execute();
+                    $update_stmt->close();
+                    
+                    return ['error' => "شما {$max_attempts} بار رمز را اشتباه وارد کردید. حساب شما برای {$lockout_time_minutes} دقیقه قفل شد.", 'statusCode' => 429];
+                } else {
+                    $update_stmt = $this->conn->prepare("UPDATE `{$this->tableName}` SET failed_login_attempts = ? WHERE id = ?");
+                    $update_stmt->bind_param("ii", $failed_attempts, $user['id']);
+                    $update_stmt->execute();
+                    $update_stmt->close();
+                }
             }
         }
         
-        $stmt->close();
         return ['error' => 'نام کاربری یا رمز عبور اشتباه است.', 'statusCode' => 401];
     }
 
     /**
-     * Changes the password for a given user. (Compatible version without get_result)
+     * Changes the password for a given user.
      * @param int $userId The ID of the user.
      * @param string $currentPassword The user's current password.
      * @param string $newPassword The new password.
@@ -91,17 +123,13 @@ class User extends BaseModel {
         $stmt = $this->conn->prepare("SELECT password_hash FROM `{$this->tableName}` WHERE id = ?");
         $stmt->bind_param("i", $userId);
         $stmt->execute();
-        $stmt->store_result();
+        $result = db_stmt_to_assoc_array($stmt);
         
-        if ($stmt->num_rows == 0) {
-            $stmt->close();
+        if (empty($result)) {
             return ['error' => 'کاربر یافت نشد.', 'statusCode' => 404];
         }
 
-        $password_hash = null;
-        $stmt->bind_result($password_hash);
-        $stmt->fetch();
-        $stmt->close();
+        $password_hash = $result[0]['password_hash'];
 
         if (!password_verify($currentPassword, $password_hash)) {
             return ['error' => 'رمز عبور فعلی شما اشتباه است.', 'statusCode' => 403];

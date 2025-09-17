@@ -64,13 +64,7 @@ body {
     margin-bottom: 1.5rem;
 }
 
-/* IMPROVEMENT: The max-height and overflow-y properties were removed.
-  This prevents the "double scrollbar" issue where tables had their own scrollbar separate from the page.
-  The table will now grow with the page content, and pagination will manage the length.
-  The default responsive behavior of Bootstrap (horizontal scroll on small screens) is preserved.
-*/
 .table-responsive {
-    /* Add a min-height to prevent layout shifts during loading */
     min-height: 200px;
 }
 
@@ -103,12 +97,6 @@ body {
 }
 
 /* Status & Color Styles */
-
-/* NOTE: The !important rule is used here intentionally.
-  It ensures that the status color of a row (e.g., unsettled invoice)
-  is not overridden by Bootstrap's default hover or striped-table styles.
-  This maintains the visibility of the status color, which is critical for the user.
-*/
 .status-unsettled {
     background-color: #fff3cd !important;
     color: #856404;
@@ -156,10 +144,8 @@ body {
     font-size: 0.9em;
     color: #0d6efd;
     margin-left: 5px;
-    /* Changed from margin-right for better alignment in RTL */
     display: inline-block;
     width: 1em;
-    /* Reserve space for the icon */
 }
 
 
@@ -177,25 +163,22 @@ nav[aria-label$="Pagination"] {
     text-align: right;
 }
 
-/* Person Statement Row Styling */
-#person-statement-table tbody .tr-type-payment {
-    background-color: #f8f9fa !important;
-    /* Light grey for payments */
-}
-
-#person-statement-table tbody .tr-type-invoice {
-    font-weight: 500;
-    /* Bolder font for invoices */
-}
-
-
-/* Align headers in the account ledger table to the right */
-#account-transactions-table thead th {
-    text-align: right !important;
-}
-
-/* Align headers for both account tables to the right */
 #account-transactions-table thead th,
 #account-statement-table thead th {
     text-align: right !important;
+}
+
+/* Transaction Row Coloring */
+.table-success-light > td, .table-success-light > th {
+    background-color: #d1e7dd !important;
+}
+
+.table-danger-light > td, .table-danger-light > th {
+    background-color: #f8d7da !important;
+}
+
+/* Style for nested modals */
+.modal-underlay {
+    filter: blur(2px) brightness(0.9);
+    transition: filter 0.2s ease-in-out;
 }

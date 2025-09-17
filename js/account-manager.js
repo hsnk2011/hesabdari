@@ -40,43 +40,44 @@ const AccountManager = (function () {
         }
     }
 
-    function renderTransactionsTable(apiResponse) {
-        const transactions = apiResponse || [];
+    function renderTransactionsTable(account, transactions) {
+        if (!account || !transactions) return;
 
         if (transactionsDataTable) {
             transactionsDataTable.destroy();
         }
 
-        const tableData = [];
-        transactions.forEach(tx => {
-            let description = tx.type;
-            if (tx.description && !description.includes(tx.description)) {
-                description += ` - ${tx.description}`;
-            }
+        transactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+        const openingBalance = parseFloat(account.initial_balance_calculated);
+
+        let runningBalance = openingBalance;
+        const tableData = transactions.map(tx => {
+            const amount = parseFloat(tx.amount);
             let bostankar = 0, bedehkar = 0;
-            const source = tx.source || '';
 
-            if (source.endsWith('_in') || source === 'check') bostankar = tx.amount;
-            else if (source.endsWith('_out')) bedehkar = tx.amount;
-
-            if (source.startsWith('partner_personal')) {
-                bostankar = source.endsWith('_in') ? tx.amount : 0;
-                bedehkar = source.endsWith('_out') ? tx.amount : 0;
+            if (tx.source.endsWith('_out') || tx.source === 'expense') {
+                bedehkar = amount;
+                runningBalance -= amount;
+            } else {
+                bostankar = amount;
+                runningBalance += amount;
             }
 
-            tableData.push({
-                date: tx.date,
-                description: description,
+            return {
+                date: UI.gregorianToPersian(tx.date),
+                description: tx.type,
                 bostankar: bostankar,
-                bedehkar: bedehkar
-            });
+                bedehkar: bedehkar,
+                balance: runningBalance
+            };
         });
+
 
         transactionsDataTable = $('#account-transactions-table').DataTable({
             language: { url: 'assets/js/i18n/fa.json' },
             data: tableData,
-            order: [[0, 'asc']],
+            order: [[0, 'desc']],
             searching: false,
             lengthChange: false,
             paging: true,
@@ -95,25 +96,11 @@ const AccountManager = (function () {
                     render: (data) => data !== 0 ? `(${UI.formatCurrency(data)})` : '-'
                 },
                 {
-                    data: null, // Placeholder for running balance
+                    data: 'balance',
                     className: 'text-end fw-bold',
-                    orderable: false,
-                    defaultContent: ''
+                    render: (data) => UI.formatCurrency(data)
                 }
-            ],
-            // Calculate running balance after table is drawn
-            "drawCallback": function (settings) {
-                const api = this.api();
-                const rows = api.rows({ page: 'current' }).nodes();
-                let balance = 0; // In a full implementation, this should start with an opening balance.
-
-                // This is a simplified running balance for the current page view.
-                // A full solution would require calculating balance across all pages.
-                api.rows({ page: 'current' }).data().each(function (data, i) {
-                    balance += (data.bostankar - data.bedehkar);
-                    $(rows).eq(i).find('td:last-child').html(UI.formatCurrency(balance));
-                });
-            }
+            ]
         });
     }
 
@@ -130,7 +117,9 @@ const AccountManager = (function () {
         const response = await Api.call('get_account_transactions', { accountId });
         UI.hideLoader();
 
-        renderTransactionsTable(response);
+        if (response && response.account && response.transactions) {
+            renderTransactionsTable(response.account, response.transactions);
+        }
     }
 
     async function load() {
@@ -139,6 +128,7 @@ const AccountManager = (function () {
     }
 
     function prepareModal(account = null) {
+        UI.hideModalError('#accountModal');
         const form = $('#account-form')[0];
         form.reset();
         $('#account-modal-title').text(account ? 'ویرایش حساب' : 'افزودن حساب جدید');
@@ -162,6 +152,7 @@ const AccountManager = (function () {
 
     async function handleFormSubmit(e) {
         e.preventDefault();
+        UI.hideModalError('#accountModal');
         const data = {
             id: $('#account-id').val(),
             name: $('#account-name').val(),
@@ -174,9 +165,12 @@ const AccountManager = (function () {
 
         const result = await Api.call('save_account', data);
         if (result?.success) {
+            UI.showSuccess('حساب با موفقیت ذخیره شد.');
             $('#accountModal').modal('hide');
             load();
             App.fetchInitialCache();
+        } else if (result?.error) {
+            UI.showModalError('#accountModal', result.error);
         }
     }
 
@@ -185,6 +179,7 @@ const AccountManager = (function () {
             if (confirmed) {
                 const result = await Api.call('delete_account', { id: accountId });
                 if (result?.success) {
+                    UI.showSuccess('حساب با موفقیت حذف شد.');
                     currentAccountId = null;
                     load();
                     App.fetchInitialCache();

@@ -1,5 +1,6 @@
 <?php
 // /api/controllers/ProductController.php
+
 require_once __DIR__ . '/../models/Product.php';
 
 class ProductController {
@@ -11,6 +12,40 @@ class ProductController {
         $this->productModel = new Product($db);
     }
 
+    public function save($data) {
+        // Server-side validation
+        if (empty(trim($data['name']))) {
+            send_json(['error' => 'نام طرح محصول الزامی است.'], 400);
+            return;
+        }
+
+        $result = $this->productModel->save($data);
+        if (isset($result['success'])) {
+            $is_new = empty($data['id']);
+            $log_description = "محصول «{$data['name']}» با شناسه {$result['id']} " . ($is_new ? "ایجاد شد." : "ویرایش شد.");
+            log_activity($this->conn, 'SAVE_PRODUCT', $log_description);
+            send_json($result);
+        } else {
+            send_json(['error' => $result['error']], $result['statusCode'] ?? 500);
+        }
+    }
+
+    public function delete($data) {
+        $id = $data['id'] ?? null;
+        if (empty($id) || !is_numeric($id)) {
+            send_json(['error' => 'شناسه نامعتبر است.'], 400);
+            return;
+        }
+        
+        $result = $this->productModel->delete($id);
+        if (isset($result['success'])) {
+            log_activity($this->conn, 'DELETE_PRODUCT', "محصول با شناسه {$id} حذف شد.");
+            send_json($result);
+        } else {
+            send_json(['error' => $result['error']], $result['statusCode'] ?? 500);
+        }
+    }
+    
     // Update attributes for a product
     public function updateAttributes($data) {
         $id = intval($data['id'] ?? 0);
@@ -49,8 +84,7 @@ class ProductController {
         $stmt = $this->conn->prepare("SELECT * FROM products WHERE parent_product_id = ? ORDER BY width_cm, length_cm");
         $stmt->bind_param("i", $parent);
         $stmt->execute();
-        $res = db_stmt_get_result($stmt)->fetch_all(MYSQLI_ASSOC);
-        $stmt->close();
+        $res = db_stmt_to_assoc_array($stmt);
         send_json(['variants'=>$res]);
     }
 
@@ -61,8 +95,9 @@ class ProductController {
         $stmt = $this->conn->prepare("SELECT id, name, design_code, colorway, collection, shaneh, density, length_cm, width_cm FROM products WHERE id = ?");
         $stmt->bind_param("i", $id);
         $stmt->execute();
-        $p = db_stmt_get_result($stmt)->fetch_assoc();
-        $stmt->close();
+        $result = db_stmt_to_assoc_array($stmt);
+        $p = $result[0] ?? null;
+
         if (!$p) { send_json(['error'=>'محصول یافت نشد'], 404); }
         // Generate a SKU-like code
         $size = (($p['length_cm'] && $p['width_cm']) ? ($p['length_cm'].'x'.$p['width_cm'].'cm') : '');

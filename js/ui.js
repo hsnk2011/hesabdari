@@ -1,6 +1,33 @@
 // /js/ui.js
 
 const UI = (function () {
+    // Toastr configuration
+    toastr.options = {
+        "closeButton": true,
+        "debug": false,
+        "newestOnTop": true,
+        "progressBar": true,
+        "positionClass": "toast-top-left",
+        "preventDuplicates": false,
+        "onclick": null,
+        "showDuration": "300",
+        "hideDuration": "1000",
+        "timeOut": "5000",
+        "extendedTimeOut": "1000",
+        "showEasing": "swing",
+        "hideEasing": "linear",
+        "showMethod": "fadeIn",
+        "hideMethod": "fadeOut"
+    };
+
+    const showSuccess = (message, title = 'موفق') => {
+        toastr.success(message, title);
+    };
+
+    const showError = (message, title = 'خطا') => {
+        toastr.error(message, title);
+    };
+
     const showLoader = () => $('#loader').show();
     const hideLoader = () => $('#loader').hide();
 
@@ -15,8 +42,53 @@ const UI = (function () {
         return String(str).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
     };
 
+    const toGregorian = (elementSelector) => {
+        try {
+            const el = $(elementSelector);
+            if (!el.length) return null;
+
+            const persianDateStr = el.val();
+            if (!persianDateStr) return null;
+
+            const englishDateStr = toEnglishDigits(persianDateStr);
+            const parts = englishDateStr.split('/');
+            if (parts.length !== 3) return null;
+
+            const year = parseInt(parts[0], 10);
+            const month = parseInt(parts[1], 10);
+            const day = parseInt(parts[2], 10);
+
+            if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+
+            const jsDate = new persianDate([year, month, day]).toDate();
+            const gy = jsDate.getFullYear();
+            const gm = String(jsDate.getMonth() + 1).padStart(2, '0');
+            const gd = String(jsDate.getDate()).padStart(2, '0');
+
+            return `${gy}-${gm}-${gd}`;
+        } catch (e) {
+            console.error("Error converting Persian date from element:", elementSelector, e);
+            return null;
+        }
+    };
+
+    const gregorianToPersian = (gregDateStr) => {
+        if (!gregDateStr || typeof gregDateStr !== 'string') return '';
+        if (gregDateStr.includes('/')) {
+            return gregDateStr;
+        }
+        try {
+            const dateObj = new Date(gregDateStr.replace(/-/g, '/'));
+            return new persianDate(dateObj).format('YYYY/MM/DD');
+        } catch (e) {
+            console.error("Error converting Gregorian date string:", gregDateStr, e);
+            return gregDateStr;
+        }
+    };
+
     const today = () => new persianDate().format('YYYY/MM/DD');
     const firstDayOfMonth = () => new persianDate().startOf('month').format('YYYY/MM/DD');
+    const firstDayOfYear = () => new persianDate().startOf('year').format('YYYY/MM/DD');
 
     function initializeDatepickers() {
         $(".persian-datepicker").pDatepicker({
@@ -84,21 +156,29 @@ const UI = (function () {
         });
     }
 
-    // --- NEW CONFIRMATION MODAL FUNCTION ---
     function confirmAction(message, callback) {
         $('#confirmationModalBody').text(message);
         const confirmBtn = $('#confirmActionBtn');
-
-        // Remove previous event handler to prevent multiple executions
         confirmBtn.off('click');
-
-        // Add the new callback
         confirmBtn.on('click', () => {
             callback(true);
             $('#confirmationModal').modal('hide');
         });
-
         $('#confirmationModal').modal('show');
+    }
+
+    function showModalError(modalId, message) {
+        const errorDiv = $(`${modalId} .form-error`);
+        if (errorDiv.length) {
+            errorDiv.text(message).slideDown();
+        }
+    }
+
+    function hideModalError(modalId) {
+        const errorDiv = $(`${modalId} .form-error`);
+        if (errorDiv.length) {
+            errorDiv.slideUp().text('');
+        }
     }
 
     return {
@@ -106,13 +186,20 @@ const UI = (function () {
         hideLoader,
         formatCurrency,
         toEnglishDigits,
+        toGregorian,
+        gregorianToPersian,
         today,
         firstDayOfMonth,
+        firstDayOfYear,
         initializeDatepickers,
         renderPagination,
         updateSortIndicators,
         debounce,
         initNumericFormatting,
-        confirmAction // <-- Add this
+        confirmAction,
+        showModalError,
+        hideModalError,
+        showSuccess,
+        showError
     };
 })();

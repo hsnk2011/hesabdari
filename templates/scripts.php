@@ -1,0 +1,22 @@
+<script src="assets/js/jquery.min.js"></script>
+<script src="assets/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/persian-date.min.js"></script>
+<script src="assets/js/persian-datepicker.min.js"></script>
+<script src="assets/js/dataTables.js"></script>
+<script src="assets/js/dataTables.bootstrap5.js"></script>
+<script src="assets/js/select2.min.js"></script>
+<script src="assets/js/chart.js"></script>
+<script src="assets/js/toastr.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/reports.js"></script>
+<script src="js/entity-manager.js"></script>
+<script src="js/transaction-manager.js"></script>
+<script src="js/partner-manager.js"></script>
+<script src="js/account-manager.js"></script>
+<script src="js/check-manager.js"></script>
+<script src="js/invoice-manager.js"></script>
+<script src="js/settings-manager.js"></script> <script src="js/dashboard.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>

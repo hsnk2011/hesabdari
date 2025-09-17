@@ -15,11 +15,30 @@ class InvoiceController {
         $this->invoiceModel = new Invoice($db);
     }
 
+    private function validateInvoiceData($data, $type) {
+        $personField = ($type === 'sales') ? 'customerId' : 'supplierId';
+        if (empty($data[$personField]) || !is_numeric($data[$personField])) {
+            return 'شناسه شخص (مشتری/تامین‌کننده) نامعتبر است.';
+        }
+        if (empty($data['date'])) {
+            return 'تاریخ فاکتور الزامی است.';
+        }
+        if (!isset($data['items']) || !is_array($data['items']) || empty($data['items'])) {
+            return 'فاکتور باید حداقل یک قلم کالا داشته باشد.';
+        }
+        return null; // No error
+    }
+
     /**
      * Handles saving a sales invoice.
      * @param array $data The invoice data from the client.
      */
     public function saveSalesInvoice($data) {
+        $error = $this->validateInvoiceData($data, 'sales');
+        if ($error) {
+            send_json(['error' => $error], 400);
+            return;
+        }
         $result = $this->invoiceModel->saveSalesInvoice($data);
         if (isset($result['success'])) {
             send_json($result);
@@ -47,6 +66,11 @@ class InvoiceController {
      * @param array $data The invoice data from the client.
      */
     public function savePurchaseInvoice($data) {
+        $error = $this->validateInvoiceData($data, 'purchase');
+        if ($error) {
+            send_json(['error' => $error], 400);
+            return;
+        }
         $result = $this->invoiceModel->savePurchaseInvoice($data);
         if (isset($result['success'])) {
             send_json($result);

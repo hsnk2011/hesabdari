@@ -15,7 +15,7 @@ class Invoice extends BaseModel {
         if ($type === 'sales') {
             $this->tableName = 'sales_invoices';
             $this->alias = 'si';
-            $this->select = "SELECT si.*, c.name as customerName";
+            $this->select = "SELECT si.*, c.name as customerName, (si.totalAmount - si.discount - si.paidAmount) as remainingAmount";
             $this->from = "FROM `sales_invoices` as si";
             $this->join = "LEFT JOIN customers c ON si.customerId = c.id";
             $this->where = $is_consignment ? "WHERE si.is_consignment = 1" : "WHERE (si.is_consignment = 0 OR si.is_consignment IS NULL)";
@@ -24,7 +24,7 @@ class Invoice extends BaseModel {
         } else {
             $this->tableName = 'purchase_invoices';
             $this->alias = 'pi';
-            $this->select = "SELECT pi.*, s.name as supplierName";
+            $this->select = "SELECT pi.*, s.name as supplierName, (pi.totalAmount - pi.discount - pi.paidAmount) as remainingAmount";
             $this->from = "FROM `purchase_invoices` as pi";
             $this->join = "LEFT JOIN suppliers s ON pi.supplierId = s.id";
             $this->where = $is_consignment ? "WHERE pi.is_consignment = 1" : "WHERE (pi.is_consignment = 0 OR pi.is_consignment IS NULL)";
@@ -48,18 +48,83 @@ class Invoice extends BaseModel {
         $paginatedResult = parent::getPaginated($input);
         
         if (!empty($paginatedResult['data'])) {
-            $paginatedResult['data'] = $this->fetchInvoiceDetails($paginatedResult['data'], strpos($input['tableName'], 'sales') !== false ? 'sales' : 'purchase');
+            $is_sales = strpos($input['tableName'], 'sales') !== false;
+            $paginatedResult['data'] = $this->applyFifoToInvoices($paginatedResult['data'], $is_sales);
+            $paginatedResult['data'] = $this->fetchInvoiceDetails($paginatedResult['data'], $is_sales ? 'sales' : 'purchase');
         }
 
         return $paginatedResult;
     }
 
+    private function applyFifoToInvoices($invoices, $isSales) {
+        if (empty($invoices)) {
+            return [];
+        }
+
+        $personType = $isSales ? 'customer' : 'supplier';
+        $personIdColumn = $isSales ? 'customerId' : 'supplierId';
+        
+        $personIds = array_unique(array_column($invoices, $personIdColumn));
+        if (empty($personIds)) {
+            return $invoices;
+        }
+
+        $ids_placeholder = implode(',', array_fill(0, count($personIds), '?'));
+        $types = str_repeat('i', count($personIds));
+        
+        $credit_sql_logic = $isSales 
+            ? "SUM(IF(transaction_type = 'receipt', amount, -amount))" 
+            : "SUM(IF(transaction_type = 'payment', amount, -amount))";
+
+        $entity_id = $_SESSION['current_entity_id'];
+        $credit_stmt = $this->conn->prepare("SELECT person_id, {$credit_sql_logic} as available_credit FROM payments WHERE entity_id = ? AND person_type = ? AND invoiceId IS NULL AND person_id IN ({$ids_placeholder}) GROUP BY person_id");
+        $credit_stmt->bind_param("is" . $types, $entity_id, $personType, ...$personIds);
+        $credit_stmt->execute();
+        $creditsByPerson = [];
+        foreach (db_stmt_to_assoc_array($credit_stmt) as $row) {
+            $creditsByPerson[$row['person_id']] = (float)$row['available_credit'];
+        }
+        
+        $unsettledInvoicesByPerson = [];
+        $invoiceTable = $isSales ? 'sales_invoices' : 'purchase_invoices';
+        $inv_stmt = $this->conn->prepare("SELECT id, {$personIdColumn}, date, (totalAmount - discount - paidAmount) as remaining FROM `{$invoiceTable}` WHERE entity_id = ? AND {$personIdColumn} IN ({$ids_placeholder}) AND (totalAmount - discount - paidAmount) > 0.01 ORDER BY date ASC, id ASC");
+        $inv_stmt->bind_param("i" . $types, $entity_id, ...$personIds);
+        $inv_stmt->execute();
+        $unsettled_res = db_stmt_to_assoc_array($inv_stmt);
+        foreach ($unsettled_res as $row) {
+            $unsettledInvoicesByPerson[$row[$personIdColumn]][] = $row;
+        }
+
+        $appliedCredits = [];
+        foreach ($unsettledInvoicesByPerson as $personId => $unsettledInvoices) {
+            $availableCredit = $creditsByPerson[$personId] ?? 0;
+            if ($availableCredit <= 0) continue;
+
+            foreach ($unsettledInvoices as $unsettled) {
+                if ($availableCredit <= 0) break;
+                $amountToApply = min($availableCredit, (float)$unsettled['remaining']);
+                $appliedCredits[$unsettled['id']] = $amountToApply;
+                $availableCredit -= $amountToApply;
+            }
+        }
+
+        foreach ($invoices as &$invoice) {
+            if (isset($appliedCredits[$invoice['id']])) {
+                $invoice['remainingAmount'] -= $appliedCredits[$invoice['id']];
+            }
+        }
+        unset($invoice);
+        
+        return $invoices;
+    }
+    
     private function saveInvoiceLogic($data, $type) {
         $isSales = $type === 'sales';
         $requiredField = $isSales ? 'customerId' : 'supplierId';
         if (empty($data[$requiredField]) || empty($data['date']) || !isset($data['items'])) {
-            return ['error' => 'اطلاعات فاکتور ناقص است.', 'statusCode' => 400];
+            return ['error' => 'اطلاعات فاکتور (شخص، تاریخ و اقلام) ناقص است.', 'statusCode' => 400];
         }
+        $entity_id = $_SESSION['current_entity_id'];
 
         $this->conn->begin_transaction();
         try {
@@ -76,9 +141,9 @@ class Invoice extends BaseModel {
             $personColumn = $isSales ? 'customerId' : 'supplierId';
             
             if ($is_new) {
-                $stmt = $this->conn->prepare("INSERT INTO `{$table}` ({$personColumn}, date, totalAmount, discount, paidAmount, description, is_consignment) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                $is_consignment = $oldInvoice['is_consignment'] ?? 0;
-                $stmt->bind_param("isdddsi", $data[$requiredField], $data['date'], $data['totalAmount'], $data['discount'], $data['paidAmount'], $data['description'], $is_consignment);
+                $stmt = $this->conn->prepare("INSERT INTO `{$table}` (entity_id, {$personColumn}, date, totalAmount, discount, paidAmount, description, is_consignment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $is_consignment = $data['is_consignment'] ?? 0;
+                $stmt->bind_param("iisdddsi", $entity_id, $data[$requiredField], $data['date'], $data['totalAmount'], $data['discount'], $data['paidAmount'], $data['description'], $is_consignment);
             } else {
                 $stmt = $this->conn->prepare("UPDATE `{$table}` SET {$personColumn}=?, date=?, totalAmount=?, discount=?, paidAmount=?, description=? WHERE id=?");
                 $stmt->bind_param("isdddsi", $data[$requiredField], $data['date'], $data['totalAmount'], $data['discount'], $data['paidAmount'], $data['description'], $invoiceId);
@@ -89,7 +154,13 @@ class Invoice extends BaseModel {
             }
             $stmt->close();
             
-            $this->adjustStockAndPaymentsForUpdate($invoiceId, $type, $data, $oldInvoice);
+            if ($is_new) {
+                $this->processNewInvoiceItems($invoiceId, $type, $data['items']);
+            } else {
+                $this->processUpdatedInvoiceItems($invoiceId, $type, $data['items'], $oldInvoice['items'] ?? []);
+            }
+            
+            $this->processPayments($invoiceId, $type, $data['payments'], $oldInvoice['payments'] ?? [], $data[$requiredField]);
 
             $this->conn->commit();
             $logAction = $isSales ? 'SAVE_SALES_INVOICE' : 'SAVE_PURCHASE_INVOICE';
@@ -99,97 +170,123 @@ class Invoice extends BaseModel {
 
         } catch (Exception $e) {
             $this->conn->rollback();
-            // Return specific status code if available
             $statusCode = is_numeric($e->getCode()) && $e->getCode() > 0 ? $e->getCode() : 500;
             return ['error' => $e->getMessage(), 'statusCode' => $statusCode];
         }
     }
-    
-    private function adjustStockAndPaymentsForUpdate($invoiceId, $type, $newData, $oldData) {
+
+    private function processNewInvoiceItems($invoiceId, $type, $newItems) {
         $isSales = $type === 'sales';
-        $accountModel = new Account($this->conn);
         $itemTable = $isSales ? 'sales_invoice_items' : 'purchase_invoice_items';
 
-        $oldItemsMap = [];
-        if ($oldData && isset($oldData['items'])) {
-            foreach ($oldData['items'] as $item) {
-                $key = $item['productId'] . '-' . $this->conn->real_escape_string($item['dimensions']);
-                $oldItemsMap[$key] = $item;
-            }
-        }
-        
-        $newItemsMap = [];
-        foreach ($newData['items'] as $itemData) {
+        foreach ($newItems as $itemData) {
             $productId = $itemData['productId'] ?? 0;
+            $itemData['dimensions'] = trim($itemData['dimensions']);
+
             if (!$isSales && isset($itemData['newProductName']) && !empty(trim($itemData['newProductName']))) {
-                $stmt_new = $this->conn->prepare("INSERT INTO products (name) VALUES (?)");
-                $stmt_new->bind_param("s", $itemData['newProductName']);
+                $entity_id = $_SESSION['current_entity_id'];
+                $stmt_new = $this->conn->prepare("INSERT INTO products (entity_id, name) VALUES (?, ?)");
+                $stmt_new->bind_param("is", $entity_id, $itemData['newProductName']);
                 $stmt_new->execute();
                 $productId = $this->conn->insert_id;
                 $stmt_new->close();
             }
             if (!$productId) continue;
             
-            $key = $productId . '-' . $this->conn->real_escape_string($itemData['dimensions']);
+            $stockAdjust = $isSales ? -$itemData['quantity'] : $itemData['quantity'];
+            $this->updateStock($productId, $itemData['dimensions'], $stockAdjust, $isSales);
+
+            $stmt_item = $this->conn->prepare("INSERT INTO `{$itemTable}` (invoiceId, productId, quantity, unitPrice, dimensions) VALUES (?, ?, ?, ?, ?)");
+            $stmt_item->bind_param("iiids", $invoiceId, $productId, $itemData['quantity'], $itemData['unitPrice'], $itemData['dimensions']);
+            $stmt_item->execute();
+            $stmt_item->close();
+        }
+    }
+
+    private function processUpdatedInvoiceItems($invoiceId, $type, $newItems, $oldItems) {
+        $isSales = $type === 'sales';
+        $itemTable = $isSales ? 'sales_invoice_items' : 'purchase_invoice_items';
+        
+        $oldItemsMap = [];
+        foreach ($oldItems as $item) {
+            $key = $item['productId'] . '::' . trim($item['dimensions']);
+            $oldItemsMap[$key] = $item;
+        }
+
+        $newItemsMap = [];
+        foreach ($newItems as $itemData) {
+            $productId = $itemData['productId'] ?? 0;
+            if (!$productId) continue; 
+            
+            $itemData['dimensions'] = trim($itemData['dimensions']);
+            $key = $productId . '::' . $itemData['dimensions'];
             $newItemsMap[$key] = $itemData;
 
             $oldQty = $oldItemsMap[$key]['quantity'] ?? 0;
             $newQty = $itemData['quantity'];
             $qtyDiff = $newQty - $oldQty;
 
-            // *** FIX: Server-side stock validation for sales invoices ***
-            if ($isSales && $qtyDiff > 0) { // If we are selling more items than before
-                $currentStock = 0;
-                $escaped_dims = $this->conn->real_escape_string($itemData['dimensions']);
-                $stock_res = $this->conn->query("SELECT quantity FROM product_stock WHERE product_id = {$productId} AND dimensions = '{$escaped_dims}'");
-                if ($stock_res && $stock_res->num_rows > 0) {
-                    $currentStock = $stock_res->fetch_assoc()['quantity'];
-                }
-
-                if ($qtyDiff > $currentStock) {
-                    throw new Exception("موجودی محصول با شناسه {$productId} و ابعاد {$itemData['dimensions']} کافی نیست. موجودی فعلی: {$currentStock} عدد.", 400);
-                }
-            }
-
-            if ($qtyDiff != 0) {
+            if ($qtyDiff !== 0) {
                 $stockAdjust = $isSales ? -$qtyDiff : $qtyDiff;
-                $this->updateStock($productId, $itemData['dimensions'], $stockAdjust);
+                $this->updateStock($productId, $itemData['dimensions'], $stockAdjust, $isSales && $qtyDiff > 0);
             }
-            
-            // Perform manual UPSERT
-            if (isset($oldItemsMap[$key])) { // This item exists, so UPDATE it
+
+            if (isset($oldItemsMap[$key])) {
                 $stmt_item = $this->conn->prepare("UPDATE `{$itemTable}` SET quantity = ?, unitPrice = ? WHERE id = ?");
-                $stmt_item->bind_param("idi", $itemData['quantity'], $itemData['unitPrice'], $oldItemsMap[$key]['id']);
-            } else { // This is a new item, INSERT it
+                $stmt_item->bind_param("idi", $newQty, $itemData['unitPrice'], $oldItemsMap[$key]['id']);
+                $stmt_item->execute();
+                $stmt_item->close();
+            } else {
                 $stmt_item = $this->conn->prepare("INSERT INTO `{$itemTable}` (invoiceId, productId, quantity, unitPrice, dimensions) VALUES (?, ?, ?, ?, ?)");
-                $stmt_item->bind_param("iiids", $invoiceId, $productId, $itemData['quantity'], $itemData['unitPrice'], $itemData['dimensions']);
+                $stmt_item->bind_param("iiids", $invoiceId, $productId, $newQty, $itemData['unitPrice'], $itemData['dimensions']);
+                $stmt_item->execute();
+                $stmt_item->close();
             }
-            $stmt_item->execute();
-            $stmt_item->close();
         }
-        
+
         foreach ($oldItemsMap as $key => $oldItem) {
             if (!isset($newItemsMap[$key])) {
                 $stockAdjust = $isSales ? $oldItem['quantity'] : -$oldItem['quantity'];
-                $this->updateStock($oldItem['productId'], $oldItem['dimensions'], $stockAdjust);
-                $this->conn->query("DELETE FROM `{$itemTable}` WHERE id = " . intval($oldItem['id']));
+                $this->updateStock($oldItem['productId'], $oldItem['dimensions'], $stockAdjust, false);
+                
+                $stmt_del = $this->conn->prepare("DELETE FROM `{$itemTable}` WHERE id = ?");
+                $stmt_del->bind_param("i", $oldItem['id']);
+                $stmt_del->execute();
+                $stmt_del->close();
             }
         }
+    }
+    
+    private function processPayments($invoiceId, $type, $newPayments, $oldPayments, $personId) {
+        $isSales = $type === 'sales';
+        $accountModel = new Account($this->conn);
+        $personType = $isSales ? 'customer' : 'supplier';
 
-        if ($oldData && isset($oldData['payments'])) {
-            foreach($oldData['payments'] as $p) {
+        if (!empty($oldPayments)) {
+            foreach ($oldPayments as $p) {
                 if ($p['type'] === 'cash' && $p['account_id']) {
-                    $accountModel->updateBalance($p['account_id'], $isSales ? -$p['amount'] : $p['amount']);
-                } else if ($p['type'] === 'endorse_check' && $p['checkId']) {
-                    $this->conn->query("UPDATE checks SET status = 'in_hand', endorsedToInvoiceId = NULL WHERE id = " . intval($p['checkId']));
+                    $amountToRevert = $isSales ? -$p['amount'] : $p['amount'];
+                    $accountModel->updateBalance($p['account_id'], $amountToRevert);
+                } elseif ($p['type'] === 'endorse_check' && $p['checkId']) {
+                    $stmt_revert_check = $this->conn->prepare("UPDATE checks SET status = 'in_hand', endorsedToInvoiceId = NULL WHERE id = ?");
+                    $stmt_revert_check->bind_param("i", $p['checkId']);
+                    $stmt_revert_check->execute();
+                    $stmt_revert_check->close();
                 }
             }
+            $stmt_del_pays = $this->conn->prepare("DELETE FROM payments WHERE invoiceId = ? AND invoiceType = ?");
+            $stmt_del_pays->bind_param("is", $invoiceId, $type);
+            $stmt_del_pays->execute();
+            $stmt_del_pays->close();
+            
+            $stmt_del_checks = $this->conn->prepare("DELETE FROM checks WHERE invoiceId = ? AND invoiceType = ? AND type = ?");
+            $checkType = $isSales ? 'received' : 'payable';
+            $stmt_del_checks->bind_param("iss", $invoiceId, $type, $checkType);
+            $stmt_del_checks->execute();
+            $stmt_del_checks->close();
         }
-        
-        $this->conn->query("DELETE FROM payments WHERE invoiceId = {$invoiceId} AND invoiceType = '{$type}'");
-        $this->conn->query("DELETE FROM checks WHERE invoiceId = {$invoiceId} AND invoiceType = '{$type}' AND type = '" . ($isSales ? 'received' : 'payable') . "'");
-        
-        $this->savePaymentsAndTransactions($type, $invoiceId, $newData['payments']);
+
+        $this->savePaymentsAndTransactions($type, $invoiceId, $newPayments, $personId, $personType);
     }
     
     public function saveSalesInvoice($data) {
@@ -199,16 +296,39 @@ class Invoice extends BaseModel {
     public function savePurchaseInvoice($data) {
         return $this->saveInvoiceLogic($data, 'purchase');
     }
-
-    private function updateStock($productId, $dimensions, $quantityChange) {
+    
+    private function updateStock($productId, $dimensions, $quantityChange, $useLock = false) {
         if ($quantityChange == 0) return;
-        $escaped_dims = $this->conn->real_escape_string($dimensions);
-        $stock_exists_res = $this->conn->query("SELECT id FROM product_stock WHERE product_id = {$productId} AND dimensions = '{$escaped_dims}'");
-        if ($stock_exists_res->num_rows > 0) {
-            $this->conn->query("UPDATE product_stock SET quantity = quantity + ({$quantityChange}) WHERE product_id = {$productId} AND dimensions = '{$escaped_dims}'");
-        } else {
-            $this->conn->query("INSERT INTO product_stock (product_id, dimensions, quantity) VALUES ({$productId}, '{$escaped_dims}', {$quantityChange})");
+
+        // **FIX START**: Rewritten logic to handle NULL in UNIQUE KEY.
+        // First, check if the record exists. warehouse_id is assumed NULL.
+        $stmt_select = $this->conn->prepare("SELECT id, quantity FROM product_stock WHERE product_id = ? AND dimensions = ? AND warehouse_id IS NULL");
+        $stmt_select->bind_param("is", $productId, $dimensions);
+        $stmt_select->execute();
+        $result = db_stmt_to_assoc_array($stmt_select);
+        $existing_stock = $result[0] ?? null;
+
+        if ($useLock) {
+            $currentStock = $existing_stock ? $existing_stock['quantity'] : 0;
+            if ($currentStock < abs($quantityChange)) {
+                 throw new Exception("موجودی محصول با شناسه {$productId} و ابعاد {$dimensions} کافی نیست. موجودی فعلی: {$currentStock} عدد.", 400);
+            }
         }
+        
+        if ($existing_stock) {
+            // Record exists, UPDATE it.
+            $stmt_update = $this->conn->prepare("UPDATE product_stock SET quantity = quantity + ? WHERE id = ?");
+            $stmt_update->bind_param("ii", $quantityChange, $existing_stock['id']);
+            $stmt_update->execute();
+            $stmt_update->close();
+        } else {
+            // Record does not exist, INSERT it.
+            $stmt_insert = $this->conn->prepare("INSERT INTO product_stock (product_id, dimensions, quantity) VALUES (?, ?, ?)");
+            $stmt_insert->bind_param("isi", $productId, $dimensions, $quantityChange);
+            $stmt_insert->execute();
+            $stmt_insert->close();
+        }
+        // **FIX END**
     }
 
     public function deleteSalesInvoice($id) {
@@ -241,38 +361,49 @@ class Invoice extends BaseModel {
         $id = intval($id);
         $isSales = $type === 'sales';
         $accountModel = new Account($this->conn);
-        $itemTable = $isSales ? 'sales_invoice_items' : 'purchase_invoice_items';
         $invoiceTable = $isSales ? 'sales_invoices' : 'purchase_invoices';
 
-        $payments_res = $this->conn->query("SELECT amount, account_id FROM payments WHERE invoiceType = '{$type}' AND invoiceId = $id AND type = 'cash' AND account_id IS NOT NULL");
-        if ($payments_res) {
-            while ($payment = $payments_res->fetch_assoc()) {
-                $amountToRevert = $isSales ? -$payment['amount'] : $payment['amount'];
-                $accountModel->updateBalance($payment['account_id'], $amountToRevert);
+        $fullInvoice = $this->fetchInvoiceDetails([['id' => $id]], $type)[0] ?? null;
+
+        if (!$fullInvoice) {
+            throw new Exception("فاکتور مورد نظر یافت نشد.");
+        }
+
+        if (isset($fullInvoice['payments'])) {
+            foreach($fullInvoice['payments'] as $payment) {
+                if ($payment['type'] === 'cash' && $payment['account_id']) {
+                    $amountToRevert = $isSales ? -$payment['amount'] : $payment['amount'];
+                    $accountModel->updateBalance($payment['account_id'], $amountToRevert);
+                } else if ($payment['type'] === 'endorse_check' && $payment['checkId']) {
+                    $stmt_revert_check = $this->conn->prepare("UPDATE checks SET status = 'in_hand', endorsedToInvoiceId = NULL WHERE id = ?");
+                    $stmt_revert_check->bind_param("i", $payment['checkId']);
+                    $stmt_revert_check->execute();
+                    $stmt_revert_check->close();
+                }
             }
         }
         
-        $items_res = $this->conn->query("SELECT productId, quantity, dimensions FROM `{$itemTable}` WHERE invoiceId = $id");
-        if ($items_res) {
-            while ($item = $items_res->fetch_assoc()) {
+        if(isset($fullInvoice['items'])) {
+            foreach ($fullInvoice['items'] as $item) {
                 $stockAdjust = $isSales ? $item['quantity'] : -$item['quantity'];
                 $this->updateStock($item['productId'], $item['dimensions'], $stockAdjust);
             }
         }
+        
+        $stmt_del_pays = $this->conn->prepare("DELETE FROM payments WHERE invoiceId = ? AND invoiceType = ?");
+        $stmt_del_pays->bind_param("is", $id, $type);
+        $stmt_del_pays->execute();
+        $stmt_del_pays->close();
+        
+        $stmt_del_checks = $this->conn->prepare("DELETE FROM checks WHERE invoiceId = ? AND invoiceType = ?");
+        $stmt_del_checks->bind_param("is", $id, $type);
+        $stmt_del_checks->execute();
+        $stmt_del_checks->close();
 
-        if (!$isSales) {
-            $payments_res = $this->conn->query("SELECT checkId FROM payments WHERE invoiceType = 'purchase' AND invoiceId = $id AND type = 'endorse_check' AND checkId IS NOT NULL");
-            if ($payments_res) {
-                while ($payment = $payments_res->fetch_assoc()) {
-                    $this->conn->query("UPDATE checks SET status = 'in_hand', endorsedToInvoiceId = NULL WHERE id = " . intval($payment['checkId']));
-                }
-            }
-        }
-
-        $this->conn->query("DELETE FROM checks WHERE invoiceType = '{$type}' AND invoiceId = $id");
-        $this->conn->query("DELETE FROM payments WHERE invoiceType = '{$type}' AND invoiceId = $id");
-        $this->conn->query("DELETE FROM `{$itemTable}` WHERE invoiceId = $id");
-        $this->conn->query("DELETE FROM `{$invoiceTable}` WHERE id = $id");
+        $stmt_del_inv = $this->conn->prepare("DELETE FROM `{$invoiceTable}` WHERE id = ?");
+        $stmt_del_inv->bind_param("i", $id);
+        $stmt_del_inv->execute();
+        $stmt_del_inv->close();
     }
 
     public function updateConsignmentStatus($action, $data) {
@@ -296,27 +427,32 @@ class Invoice extends BaseModel {
         }
     }
 
-    private function savePaymentsAndTransactions($invoiceType, $invoiceId, $payments) {
+    private function savePaymentsAndTransactions($invoiceType, $invoiceId, $payments, $personId, $personType) {
         $accountModel = new Account($this->conn);
+        $isSales = $invoiceType === 'sales';
+        $transactionType = $isSales ? 'receipt' : 'payment';
+        $entity_id = $_SESSION['current_entity_id'];
+
         foreach ($payments as $payment) {
             $checkId = null;
-            $isSales = $invoiceType === 'sales';
             $accountId = $payment['account_id'] ?? null;
 
             if ($payment['type'] === 'check' && isset($payment['checkDetails'])) {
                 $checkType = $isSales ? 'received' : 'payable';
                 $checkStatus = $isSales ? 'in_hand' : 'payable';
-                $stmt_check = $this->conn->prepare("INSERT INTO checks (type, invoiceId, invoiceType, checkNumber, dueDate, bankName, amount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt_check->bind_param("sissssds", $checkType, $invoiceId, $invoiceType, $payment['checkDetails']['checkNumber'], $payment['checkDetails']['dueDate'], $payment['checkDetails']['bankName'], $payment['amount'], $checkStatus);
+                $stmt_check = $this->conn->prepare("INSERT INTO checks (entity_id, type, invoiceId, invoiceType, checkNumber, dueDate, bankName, amount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt_check->bind_param("isissssds", $entity_id, $checkType, $invoiceId, $invoiceType, $payment['checkDetails']['checkNumber'], $payment['checkDetails']['dueDate'], $payment['checkDetails']['bankName'], $payment['amount'], $checkStatus);
                 $stmt_check->execute();
                 $checkId = $this->conn->insert_id;
                 $stmt_check->close();
             } else if ($payment['type'] === 'endorse_check') {
                 $checkId = intval($payment['checkId']);
-                $this->conn->query("UPDATE checks SET status = 'endorsed', endorsedToInvoiceId = {$invoiceId} WHERE id = {$checkId}");
+                $stmt_endorse = $this->conn->prepare("UPDATE checks SET status = 'endorsed', endorsedToInvoiceId = ? WHERE id = ?");
+                $stmt_endorse->bind_param("ii", $invoiceId, $checkId);
+                $stmt_endorse->execute();
+                $stmt_endorse->close();
             }
 
-            // *** FIX: Server-side validation for cash payment account ***
             if($payment['type'] === 'cash') {
                 if (empty($accountId)) {
                     throw new Exception("برای پرداخت نقدی، انتخاب حساب الزامی است.", 400);
@@ -325,8 +461,10 @@ class Invoice extends BaseModel {
                 $accountModel->updateBalance($accountId, $adjustedAmount);
             }
 
-            $stmt_pay = $this->conn->prepare("INSERT INTO payments (invoiceId, invoiceType, type, amount, date, description, checkId, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt_pay->bind_param("issdssii", $invoiceId, $invoiceType, $payment['type'], $payment['amount'], $payment['date'], $payment['description'], $checkId, $accountId);
+            $stmt_pay = $this->conn->prepare(
+                "INSERT INTO payments (entity_id, invoiceId, invoiceType, person_id, person_type, transaction_type, type, amount, date, description, checkId, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $stmt_pay->bind_param("iisisssdssii", $entity_id, $invoiceId, $invoiceType, $personId, $personType, $transactionType, $payment['type'], $payment['amount'], $payment['date'], $payment['description'], $checkId, $accountId);
             $stmt_pay->execute();
             $stmt_pay->close();
         }
@@ -337,56 +475,62 @@ class Invoice extends BaseModel {
     
         $item_table = $invoice_type . '_invoice_items';
         $invoice_ids = array_column($invoices, 'id');
-        $invoice_ids_str = implode(',', array_map('intval', $invoice_ids));
-    
+        
+        $prepare_in_clause = function(array $ids, string &$types) {
+            if (empty($ids)) return ['', []];
+            $placeholder = implode(',', array_fill(0, count($ids), '?'));
+            $types .= str_repeat('i', count($ids));
+            return [$placeholder, $ids];
+        };
+        
+        $params = [];
+        $types = '';
+        list($ids_placeholder, $id_params) = $prepare_in_clause($invoice_ids, $types);
+        $params = array_merge($params, $id_params);
+        if (empty($ids_placeholder)) return $invoices;
+
         $items_by_invoice = [];
-        $product_ids_in_items = [];
         $items_sql = "
             SELECT ii.*, p.name as productName 
             FROM `{$item_table}` ii 
             LEFT JOIN products p ON ii.productId = p.id 
-            WHERE ii.invoiceId IN ($invoice_ids_str)
+            WHERE ii.invoiceId IN ($ids_placeholder)
         ";
-        $items_res = $this->conn->query($items_sql);
-        if ($items_res) {
-            while ($item = $items_res->fetch_assoc()) {
-                $items_by_invoice[$item['invoiceId']][] = $item;
-                $product_ids_in_items[] = $item['productId'];
-            }
-        }
-        
-        // *** FIX: Fetch stock for all products found in the items ***
-        $stock_by_product = [];
-        if (!empty($product_ids_in_items)) {
-            $unique_product_ids = array_unique($product_ids_in_items);
-            $pids_str = implode(',', $unique_product_ids);
-            $stock_res = $this->conn->query("SELECT * FROM product_stock WHERE product_id IN ({$pids_str})");
-            if ($stock_res) {
-                while ($stock = $stock_res->fetch_assoc()) {
-                    $stock_by_product[$stock['product_id']][] = $stock;
-                }
-            }
+        $stmt_items = $this->conn->prepare($items_sql);
+        $stmt_items->bind_param($types, ...$params);
+        $stmt_items->execute();
+        $items_res = db_stmt_to_assoc_array($stmt_items);
+        foreach ($items_res as $item) {
+            $items_by_invoice[$item['invoiceId']][] = $item;
         }
     
         $payments_by_invoice = [];
         $all_check_ids = [];
-        $payments_res = $this->conn->query("SELECT * FROM payments WHERE invoiceType = '{$invoice_type}' AND invoiceId IN ($invoice_ids_str)");
-        if ($payments_res) {
-            while ($payment = $payments_res->fetch_assoc()) {
-                $payments_by_invoice[$payment['invoiceId']][] = $payment;
-                if (!empty($payment['checkId'])) {
-                    $all_check_ids[] = intval($payment['checkId']);
-                }
+        $stmt_payments = $this->conn->prepare("SELECT * FROM payments WHERE invoiceType = ? AND invoiceId IN ($ids_placeholder)");
+        $stmt_payments->bind_param('s' . $types, $invoice_type, ...$params);
+        $stmt_payments->execute();
+        $payments_res = db_stmt_to_assoc_array($stmt_payments);
+        foreach ($payments_res as $payment) {
+            $payments_by_invoice[$payment['invoiceId']][] = $payment;
+            if (!empty($payment['checkId'])) {
+                $all_check_ids[] = intval($payment['checkId']);
             }
         }
     
         $checks_by_id = [];
         if (!empty($all_check_ids)) {
             $unique_check_ids = array_unique($all_check_ids);
-            $check_ids_str = implode(',', $unique_check_ids);
-            $checks_res = $this->conn->query("SELECT * FROM checks WHERE id IN ($check_ids_str)");
-            if ($checks_res) {
-                while ($check = $checks_res->fetch_assoc()) {
+            $check_params = [];
+            $check_types = '';
+            list($check_ids_placeholder, $check_id_params) = $prepare_in_clause($unique_check_ids, $check_types);
+            $check_params = array_merge($check_params, $check_id_params);
+
+            if (!empty($check_ids_placeholder)) {
+                $stmt_checks = $this->conn->prepare("SELECT * FROM checks WHERE id IN ($check_ids_placeholder)");
+                $stmt_checks->bind_param($check_types, ...$check_params);
+                $stmt_checks->execute();
+                $checks_res = db_stmt_to_assoc_array($stmt_checks);
+                foreach ($checks_res as $check) {
                     $checks_by_id[$check['id']] = $check;
                 }
             }
@@ -395,15 +539,7 @@ class Invoice extends BaseModel {
         $processed_invoices = [];
         foreach ($invoices as $invoice) {
             $invId = intval($invoice['id']);
-            
-            $invoice_items = $items_by_invoice[$invId] ?? [];
-            $processed_items = [];
-            foreach ($invoice_items as $item) {
-                // Attach stock info to each item
-                $item['stock'] = $stock_by_product[$item['productId']] ?? [];
-                $processed_items[] = $item;
-            }
-            $invoice['items'] = $processed_items;
+            $invoice['items'] = $items_by_invoice[$invId] ?? [];
             
             $invoice_payments = $payments_by_invoice[$invId] ?? [];
             $processed_payments = [];
@@ -415,8 +551,10 @@ class Invoice extends BaseModel {
             }
             $invoice['payments'] = $processed_payments;
             
-            $invoice['remainingAmount'] = ($invoice['totalAmount'] ?? 0) - ($invoice['discount'] ?? 0) - ($invoice['paidAmount'] ?? 0);
-            
+            if (!isset($invoice['remainingAmount'])) {
+                 $invoice['remainingAmount'] = ($invoice['totalAmount'] ?? 0) - ($invoice['discount'] ?? 0) - ($invoice['paidAmount'] ?? 0);
+            }
+           
             $processed_invoices[] = $invoice;
         }
     

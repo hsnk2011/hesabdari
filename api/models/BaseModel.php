@@ -14,11 +14,19 @@ class BaseModel {
     protected $allowedFilters = [];
     protected $allowedSorts = [];
     protected $alias = ''; // Table alias for sorting
+    protected $hasEntityId = true; // Assume tables have entity_id by default
 
     public function __construct($db) {
         $this->conn = $db;
         $this->alias = $this->tableName; // Default alias is the table name itself
-        $this->from = "FROM `{$this->tableName}` as {$this->alias}";
+        $this->from = "FROM `{$this->tableName}` as `{$this->alias}`";
+        
+        // Disable entity filtering for specific models that are global
+        $globalModels = ['User', 'ActivityLog', 'Partner', 'Settings'];
+        if (in_array(get_class($this), $globalModels)) {
+            $this->hasEntityId = false;
+        }
+
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
     }
 
@@ -56,6 +64,14 @@ class BaseModel {
         $finalWhere = $this->where;
         $params = [];
         $param_types = '';
+        
+        // Automatically add entity_id filter if the model supports it
+        if ($this->hasEntityId) {
+            $aliasPrefix = $this->alias ? "`{$this->alias}`." : '';
+            $finalWhere .= " AND {$aliasPrefix}`entity_id` = ?";
+            $params[] = $_SESSION['current_entity_id'];
+            $param_types .= 'i';
+        }
 
         if (!empty($searchTerm) && !empty($this->allowedFilters)) {
             $search_parts = [];

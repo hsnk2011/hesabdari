@@ -1,17 +1,31 @@
 <?php
 // /api/models/Supplier.php
 require_once __DIR__ . '/BaseModel.php';
+require_once __DIR__ . '/traits/PersonBalanceTrait.php';
 
 class Supplier extends BaseModel {
+    use PersonBalanceTrait; // Use the refactored trait
+
     protected $tableName = 'suppliers';
     protected $allowedFilters = ['name', 'phone', 'economicCode'];
     protected $allowedSorts = ['id', 'name', 'phone', 'economicCode'];
 
-    public function save($data) {
-        if (empty($data['name']) || empty($data['economicCode'])) {
-            return ['error' => 'نام تأمین‌کننده و کد اقتصادی الزامی است.', 'statusCode' => 400];
+    public function getPaginated($input) {
+        $paginatedResult = parent::getPaginated($input);
+        
+        if (empty($paginatedResult['data'])) {
+            return $paginatedResult;
         }
 
+        // Use the trait method to attach balance data
+        $suppliersWithBalance = $this->attachBalanceDataToPersons($paginatedResult['data'], 'supplier');
+
+        $paginatedResult['data'] = $suppliersWithBalance;
+        return $paginatedResult;
+    }
+
+    public function save($data) {
+        // Validation is now handled in SupplierController
         $id = $data['id'] ?? null;
         $name = $data['name'];
         $address = $data['address'] ?? '';
@@ -23,8 +37,9 @@ class Supplier extends BaseModel {
             $stmt = $this->conn->prepare("UPDATE `{$this->tableName}` SET name = ?, address = ?, phone = ?, economicCode = ?, initial_balance = ? WHERE id = ?");
             $stmt->bind_param("ssssdi", $name, $address, $phone, $economicCode, $initial_balance, $id);
         } else {
-            $stmt = $this->conn->prepare("INSERT INTO `{$this->tableName}` (name, address, phone, economicCode, initial_balance) VALUES (?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssssd", $name, $address, $phone, $economicCode, $initial_balance);
+            $entity_id = $_SESSION['current_entity_id'];
+            $stmt = $this->conn->prepare("INSERT INTO `{$this->tableName}` (entity_id, name, address, phone, economicCode, initial_balance) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("issssd", $entity_id, $name, $address, $phone, $economicCode, $initial_balance);
         }
 
         if ($stmt->execute()) {

@@ -10,55 +10,42 @@ class Expense extends BaseModel {
         parent::__construct($db);
         $this->alias = 'e'; // Set table alias
         
-        // Configure the select and join clauses for the paginated query in BaseModel
         $this->select = "SELECT e.*, a.name as accountName";
         $this->from = "FROM `{$this->tableName}` as e";
         $this->join = "LEFT JOIN accounts a ON e.account_id = a.id";
         
-        // Define allowed filters and sorts using aliases
         $this->allowedFilters = ['e.category', 'e.description', 'e.amount', 'a.name'];
         $this->allowedSorts = ['id', 'date', 'category', 'amount'];
     }
 
-    // The getPaginated method is now inherited from BaseModel and works with the configuration above.
-
     public function save($data) {
-        if (empty($data['category']) || !isset($data['amount']) || !is_numeric($data['amount']) || $data['amount'] <= 0 || empty($data['date']) || empty($data['account_id'])) {
-            return ['error' => 'لطفاً تمام فیلدهای الزامی هزینه (دسته‌بندی، مبلغ، تاریخ و حساب پرداخت) را به درستی وارد کنید.', 'statusCode' => 400];
-        }
-
+        // Validation is now handled in ExpenseController
         $this->conn->begin_transaction();
-        $accountModel = new Account($this->conn);
-
         try {
             $id = $data['id'] ?? null;
             $amount = $data['amount'];
             $accountId = $data['account_id'];
-            $oldExpense = null;
+            $accountModel = new Account($this->conn);
 
             if ($id) {
+                // Find the old expense to revert its financial effect
                 $oldExpenseStmt = $this->conn->prepare("SELECT amount, account_id FROM `{$this->tableName}` WHERE id = ?");
                 $oldExpenseStmt->bind_param("i", $id);
                 $oldExpenseStmt->execute();
-                $oldExpenseStmt->store_result();
-                if ($oldExpenseStmt->num_rows > 0) {
-                    $old_amount = 0; $old_account_id = 0;
-                    $oldExpenseStmt->bind_result($old_amount, $old_account_id);
-                    $oldExpenseStmt->fetch();
-                    $oldExpense = ['amount' => $old_amount, 'account_id' => $old_account_id];
-                }
-                $oldExpenseStmt->close();
+                $old_res = db_stmt_to_assoc_array($oldExpenseStmt);
+                $oldExpense = $old_res[0] ?? null;
 
-                // Revert the old transaction amount from the old account
                 if ($oldExpense) {
+                    // Add the old amount back to the old account
                     $accountModel->updateBalance($oldExpense['account_id'], $oldExpense['amount']);
                 }
                 
                 $stmt = $this->conn->prepare("UPDATE `{$this->tableName}` SET category=?, date=?, amount=?, description=?, account_id=? WHERE id=?");
                 $stmt->bind_param("ssdsii", $data['category'], $data['date'], $amount, $data['description'], $accountId, $id);
             } else {
-                $stmt = $this->conn->prepare("INSERT INTO `{$this->tableName}` (category, date, amount, description, account_id) VALUES (?, ?, ?, ?, ?)");
-                $stmt->bind_param("ssdsi", $data['category'], $data['date'], $amount, $data['description'], $accountId);
+                $entity_id = $_SESSION['current_entity_id'];
+                $stmt = $this->conn->prepare("INSERT INTO `{$this->tableName}` (entity_id, category, date, amount, description, account_id) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("isssdsi", $entity_id, $data['category'], $data['date'], $amount, $data['description'], $accountId);
             }
             
             $stmt->execute();
@@ -73,7 +60,7 @@ class Expense extends BaseModel {
 
         } catch (Exception $e) {
             $this->conn->rollback();
-            return ['error' => $e->getMessage(), 'statusCode' => 500];
+            return ['error' => 'خطا در ذخیره هزینه: ' . $e->getMessage(), 'statusCode' => 500];
         }
     }
 
@@ -83,35 +70,34 @@ class Expense extends BaseModel {
              return ['error' => 'شناسه نامعتبر است.', 'statusCode' => 400];
         }
         $this->conn->begin_transaction();
-        $accountModel = new Account($this->conn);
         try {
             $stmt = $this->conn->prepare("SELECT amount, account_id FROM `{$this->tableName}` WHERE id = ?");
             $stmt->bind_param("i", $id);
             $stmt->execute();
-            $stmt->store_result();
-            $expense = null;
-            if ($stmt->num_rows > 0) {
-                $amount = 0; $account_id = 0;
-                $stmt->bind_result($amount, $account_id);
-                $stmt->fetch();
-                $expense = ['amount' => $amount, 'account_id' => $account_id];
-            }
-            $stmt->close();
+            $res = db_stmt_to_assoc_array($stmt);
+            $expense = $res[0] ?? null;
 
-            if ($expense) {
-                // Add the amount back to the account
-                $accountModel->updateBalance($expense['account_id'], $expense['amount']);
+            if (!$expense) {
+                throw new Exception("هزینه مورد نظر یافت نشد.", 404);
             }
+
+            // Add the amount back to the account
+            $accountModel = new Account($this->conn);
+            $accountModel->updateBalance($expense['account_id'], $expense['amount']);
             
             // Use the parent's delete method to remove the record
-            parent::delete($id);
+            $deleteResult = parent::delete($id);
+            if(isset($deleteResult['error'])){
+                throw new Exception($deleteResult['error']);
+            }
 
             $this->conn->commit();
             return ['success' => true];
 
         } catch (Exception $e) {
             $this->conn->rollback();
-            return ['error' => $e->getMessage(), 'statusCode' => 500];
+            $statusCode = is_numeric($e->getCode()) && $e->getCode() > 0 ? $e->getCode() : 500;
+            return ['error' => 'خطا در حذف هزینه: ' . $e->getMessage(), 'statusCode' => $statusCode];
         }
     }
 }

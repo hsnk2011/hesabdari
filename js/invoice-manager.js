@@ -2,16 +2,18 @@
 
 const InvoiceManager = (function () {
 
+    // --- Private Helper Functions for Rendering ---
     function _renderInvoiceRow(inv, type) {
-        const isSettled = inv.remainingAmount == 0;
+        const isSettled = inv.remainingAmount < 0.01;
         const rowStatusClass = isSettled ? 'status-settled' : 'status-unsettled';
         const badgeStatusClass = isSettled ? 'bg-success' : 'bg-warning';
         const statusText = isSettled ? 'تسویه شده' : 'تسویه نشده';
         const personName = type === 'sales' ? inv.customerName : inv.supplierName;
         const entityType = type === 'sales' ? 'salesInvoice' : 'purchaseInvoice';
+        const persianDateStr = UI.gregorianToPersian(inv.date);
         const row = $(`<tr class="${rowStatusClass}">
             <td>${inv.id}</td>
-            <td>${inv.date}</td>
+            <td>${persianDateStr}</td>
             <td>${personName || ''}</td>
             <td>${UI.formatCurrency(inv.totalAmount)}</td>
             <td class="text-info">${UI.formatCurrency(inv.discount)}</td>
@@ -36,10 +38,10 @@ const InvoiceManager = (function () {
         const statusText = inv.remainingAmount == 0 ? 'تسویه شده' : 'تسویه نشده';
         const personName = type === 'sales' ? inv.customerName : inv.supplierName;
         const entityType = type === 'sales' ? 'salesInvoice' : 'purchaseInvoice';
-
+        const persianDateStr = UI.gregorianToPersian(inv.date);
         const row = $(`<tr>
             <td>${inv.id}</td>
-            <td>${inv.date}</td>
+            <td>${persianDateStr}</td>
             <td>${personName || ''}</td>
             <td>${UI.formatCurrency(inv.totalAmount)}</td>
             <td>${UI.formatCurrency(inv.discount || 0)}</td>
@@ -53,7 +55,6 @@ const InvoiceManager = (function () {
                 </div>
             </td>
         </tr>`);
-
         row.find('.btn-edit, .btn-print').data('entity', inv);
         return row;
     }
@@ -81,19 +82,6 @@ const InvoiceManager = (function () {
         }
     };
 
-    async function load(tableName) {
-        UI.showLoader();
-        const state = AppConfig.TABLE_STATES[tableName];
-        state.tableName = tableName;
-        const response = await Api.call('get_paginated_data', state);
-        if (response && renderers[tableName]) {
-            renderers[tableName](response.data);
-            UI.renderPagination(tableName, response.totalRecords, state);
-            UI.updateSortIndicators(tableName, state);
-        }
-        UI.hideLoader();
-    }
-
     function calculateInvoiceItemTotal(row) {
         const quantity = parseInt(row.find('.quantity').val()) || 0;
         const unitPrice = parseInt((row.find('.unit-price').val() || '').replace(/,/g, '')) || 0;
@@ -103,22 +91,47 @@ const InvoiceManager = (function () {
     function calculateInvoiceTotals(type) {
         const itemsContainer = $(`#${type}-invoice-items-container`);
         const paymentsContainer = $(`#${type}-invoice-payments-container`);
-        let total = 0;
+        let total = 0, totalQuantity = 0, totalArea = 0;
+
         itemsContainer.find('.dynamic-row').each(function () {
             const unitPrice = Number(($(this).find('.unit-price').val() || '').replace(/,/g, '')) || 0;
             const quantity = Number($(this).find('.quantity').val()) || 0;
             total += unitPrice * quantity;
+            totalQuantity += quantity;
+            let area = 0;
+
+            let dims = $(this).find('.dimensions-select').val();
+            if (dims === 'custom') {
+                dims = ($(this).find('.custom-dimension-input').val() || '').trim();
+            }
+
+            if (dims) {
+                const parts = dims.toLowerCase().replace('*', 'x').split('x');
+                if (parts.length === 2) {
+                    let width = parseFloat(parts[0]);
+                    let height = parseFloat(parts[1]);
+                    if (!isNaN(width) && !isNaN(height)) {
+                        const CM_THRESHOLD = 15;
+                        if (width > CM_THRESHOLD || height > CM_THRESHOLD) {
+                            width /= 100;
+                            height /= 100;
+                        }
+                        area = width * height;
+                    }
+                }
+            }
+            totalArea += area * quantity;
         });
 
         const discount = Number(($(`#${type}-invoice-discount`).val() || '').replace(/,/g, '')) || 0;
-
         let paid = 0;
         paymentsContainer.find('.dynamic-row').each(function () {
             paid += Number(($(this).find('.payment-amount').val() || '').replace(/,/g, '')) || 0;
         });
 
         const finalAmount = total - discount;
-
+        $(`#${type}-invoice-total-quantity`).text(totalQuantity.toLocaleString('fa-IR'));
+        $(`#${type}-invoice-total-area`).text(`${totalArea.toFixed(2).toLocaleString('fa-IR')} متر مربع`);
         $(`#${type}-invoice-total`).text(UI.formatCurrency(total));
         $(`#${type}-invoice-paid`).text(UI.formatCurrency(paid));
         $(`#${type}-invoice-remaining`).text(UI.formatCurrency(finalAmount - paid));
@@ -127,79 +140,73 @@ const InvoiceManager = (function () {
     function addInvoiceItemRow(containerSelector, item = null) {
         const isSales = containerSelector.attr('id').includes('sales');
         const modalId = isSales ? '#salesInvoiceModal' : '#purchaseInvoiceModal';
-        
-        let newProductOption = !isSales ? `<option value="new_product" class="text-primary fw-bold">-- افزودن محصول جدید --</option>` : '';
+        const appCache = App.getCache();
+        let productList = appCache.products || [];
+
+        const originalInvoiceItems = $(containerSelector).closest('form').data('original-items') || [];
+
+        if (isSales) {
+            productList = appCache.products.filter(p => {
+                const hasStock = p.stock && p.stock.some(s => s.quantity > 0);
+                const isOnThisInvoice = item && p.id == item.productId;
+                return hasStock || isOnThisInvoice;
+            });
+        }
+
+        let productOptions = productList.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+
+        const newProductButtonHtml = isSales ? '' : `<button class="btn btn-outline-success btn-add-new-product-inline" type="button" title="افزودن محصول جدید"><i class="bi bi-plus-lg"></i></button>`;
+        const productSelectionHtml = `<div class="input-group">
+                                        <select class="form-select product-select"><option></option>${productOptions}</select>
+                                        ${newProductButtonHtml}
+                                      </div>
+                                      <input type="text" class="form-control new-product-name mt-1" style="display:none;" placeholder="نام محصول جدید...">`;
 
         const row = $(`<div class="row dynamic-row align-items-end mb-2">
-            <div class="col-md-3 product-selection-container"><label class="form-label">طرح فرش</label><select class="form-select product-select"><option></option>${newProductOption}</select><input type="text" class="form-control new-product-name mt-1" style="display:none;" placeholder="نام محصول جدید..."></div>
-            <div class="col-md-3 dimensions-container"><label class="form-label">ابعاد</label><select class="form-select dimensions-select" disabled><option value="">ابتدا طرح را انتخاب کنید</option></select></div>
-            <div class="col-md-2"><label class="form-label">تعداد</label><input type="number" class="form-control quantity" value="1" min="1"></div>
+            <div class="col-md-4 product-selection-container"><label class="form-label">طرح فرش</label>${productSelectionHtml}</div>
+            <div class="col-md-2 dimensions-container"><label class="form-label">ابعاد</label><select class="form-select dimensions-select" disabled><option value="">ابتدا طرح را انتخاب کنید</option></select></div>
+            <div class="col-md-1"><label class="form-label">تعداد</label><input type="number" class="form-control quantity" value="1" min="1"></div>
             <div class="col-md-2"><label class="form-label">قیمت واحد</label><input type="text" class="form-control unit-price numeric-input" value="0"></div>
-            <div class="col-md-1"><label class="form-label">جمع</label><input type="text" class="form-control item-total" readonly></div>
+            <div class="col-md-2"><label class="form-label">جمع</label><input type="text" class="form-control item-total" readonly></div>
             <div class="col-md-1"><button type="button" class="btn btn-danger btn-sm remove-item-btn"><i class="bi bi-x-lg"></i></button></div>
         </div>`);
 
         containerSelector.append(row);
-        const productSelect = row.find('.product-select');
-        
-        productSelect.select2({
+
+        row.find('.product-select').select2({
             theme: 'bootstrap-5',
             dir: 'rtl',
             placeholder: "جستجو و انتخاب محصول...",
-            dropdownParent: $(modalId),
-            ajax: {
-                transport: async function(params, success, failure) {
-                    const data = await Api.call('search_entities', { entityType: 'products', term: params.data.q || '' });
-                    if (data && data.results) {
-                        success(data);
-                    } else {
-                        failure();
-                    }
-                },
-                processResults: function (data) {
-                    if (!isSales) {
-                        data.results.push({ id: 'new_product', text: '-- افزودن محصول جدید --' });
-                    }
-                    return { results: data.results };
-                },
-                delay: 250,
-                cache: true
-            }
+            dropdownParent: $(modalId)
         });
 
         if (item) {
-            const option = new Option(item.productName, item.productId, true, true);
-            productSelect.append(option).trigger('change');
-
-            // *** FIX: Call populateDimensions directly with all necessary data ***
-            populateDimensions(
-                { id: item.productId, stock: item.stock || [], row: row },
-                item.dimensions
-            );
-            
+            row.find('.product-select').val(item.productId).trigger('change');
+            populateDimensions(row.find('.product-select'), item.dimensions);
             row.find('.quantity').val(item.quantity);
             row.find('.unit-price').val(Number(item.unitPrice).toLocaleString('en-US'));
             calculateInvoiceItemTotal(row);
         }
     }
 
-    function populateDimensions(productData, preselectedDimension = null) {
-        const row = productData.row;
+    function populateDimensions(productSelect, preselectedDimension = null) {
+        const productId = productSelect.val();
+        const row = productSelect.closest('.dynamic-row');
         const dimensionsSelect = row.find('.dimensions-select');
         const dimensionsContainer = row.find('.dimensions-container');
-        const isPurchase = row.closest('form').attr('id').includes('purchase');
+        const isSales = productSelect.closest('form').attr('id').includes('sales');
 
         dimensionsSelect.empty().prop('disabled', true);
         dimensionsContainer.find('.custom-dimension-wrapper').remove();
 
-        if (!productData.id) {
+        if (!productId) {
             dimensionsSelect.append('<option>ابتدا طرح را انتخاب کنید</option>');
             return;
         }
 
         dimensionsSelect.prop('disabled', false).append('<option value="">انتخاب کنید...</option>');
 
-        if (isPurchase) {
+        if (!isSales) {
             AppConfig.STANDARD_CARPET_DIMENSIONS.forEach(dim => dimensionsSelect.append(`<option value="${dim}">${dim}</option>`));
             dimensionsSelect.append('<option value="custom">سایز سفارشی...</option>');
             if (preselectedDimension) {
@@ -211,38 +218,35 @@ const InvoiceManager = (function () {
                 }
             }
         } else { // Sales
-            if (productData.stock) {
-                let addedDimensions = new Set();
-                productData.stock.forEach(s => {
-                    if (s.quantity > 0 || s.dimensions === preselectedDimension) {
+            const product = App.getCache().products.find(p => p.id == productId);
+            const originalInvoiceItems = productSelect.closest('form').data('original-items') || [];
+
+            if (product && product.stock) {
+                product.stock.forEach(s => {
+                    const originalItem = originalInvoiceItems.find(it => it.productId == productId && it.dimensions === s.dimensions);
+                    const originalQty = originalItem ? originalItem.quantity : 0;
+                    const effectiveStock = s.quantity + originalQty;
+
+                    if (effectiveStock > 0 || s.dimensions === preselectedDimension) {
                         dimensionsSelect.append(`<option value="${s.dimensions}">${s.dimensions} (موجودی: ${s.quantity})</option>`);
-                        addedDimensions.add(s.dimensions);
                     }
                 });
-                if (preselectedDimension && !addedDimensions.has(preselectedDimension)) {
-                    const stockItem = productData.stock.find(s => s.dimensions === preselectedDimension);
-                    dimensionsSelect.append(`<option value="${preselectedDimension}">${preselectedDimension} (موجودی: ${stockItem ? stockItem.quantity : 0})</option>`);
-                }
             }
-            if (preselectedDimension) {
-                dimensionsSelect.val(preselectedDimension);
-            }
+            if (preselectedDimension) dimensionsSelect.val(preselectedDimension);
         }
     }
 
     function getNewCheckDetailsHtml(check = null) {
+        const dueDate = check && check.dueDate ? UI.gregorianToPersian(check.dueDate) : UI.today();
         return `<div class="row g-2">
             <div class="col-4"><label class="form-label-sm">شماره چک</label><input type="text" class="form-control form-control-sm check-number" value="${check ? check.checkNumber : ''}"></div>
-            <div class="col-4"><label class="form-label-sm">تاریخ سررسید</label><input type="text" class="form-control form-control-sm persian-datepicker check-due-date" value="${check ? check.dueDate : ''}"></div>
+            <div class="col-4"><label class="form-label-sm">تاریخ سررسید</label><input type="text" class="form-control form-control-sm persian-datepicker check-due-date" value="${dueDate}"></div>
             <div class="col-4"><label class="form-label-sm">نام بانک</label><input type="text" class="form-control form-control-sm check-bank-name" value="${check ? check.bankName : ''}"></div>
         </div>`;
     }
 
-    async function getEndorseCheckHtml(checkId = null) {
-        const apiParams = checkId ? { specificId: checkId } : { status: 'in_hand' };
-        const checksResponse = await Api.call('get_paginated_data', { tableName: 'checks', ...apiParams });
-        const availableChecks = checksResponse ? checksResponse.data : [];
-
+    function getEndorseCheckHtml(checkId = null) {
+        const availableChecks = (App.getCache().checks || []).filter(c => c.type === 'received' && (c.status === 'in_hand' || c.id == checkId));
         if (availableChecks.length === 0 && !checkId) {
             return '<div><p class="text-danger small mt-2">چک قابل واگذاری وجود ندارد.</p></div>';
         }
@@ -250,7 +254,7 @@ const InvoiceManager = (function () {
         return `<div><label class="form-label-sm">انتخاب چک</label><select class="form-select form-select-sm endorsed-check-select"><option value="">-- انتخاب کنید --</option>${options}</select></div>`;
     }
 
-    async function addPaymentRow(containerSelector, invoiceType, payment = null) {
+    function addPaymentRow(containerSelector, invoiceType, payment = null) {
         const checkOptionHtml = invoiceType === 'purchase' ? '<option value="endorse_check">خرج چک دریافتی</option>' : '';
         const rowHtml = `<div class="row dynamic-row payment-row align-items-end mb-2">
             <div class="col-md-2"><label class="form-label">نوع پرداخت</label><select class="form-select payment-type"><option value="cash">نقد</option><option value="check">چک جدید</option>${checkOptionHtml}</select></div>
@@ -265,14 +269,14 @@ const InvoiceManager = (function () {
         const paymentDateInput = row.find('.payment-date');
         const detailsContainer = row.find('.payment-details-container');
 
-        async function updateDetails(type, details) {
-            detailsContainer.empty().html('<div class="spinner-border spinner-border-sm"></div>');
+        function updateDetails(type, details) {
+            detailsContainer.empty();
             if (type === 'check') {
                 detailsContainer.html(getNewCheckDetailsHtml(details ? details.checkDetails : null));
                 paymentAmountInput.prop('readonly', false);
                 if (details && details.checkDetails) paymentAmountInput.val(details.amount);
             } else if (type === 'endorse_check') {
-                detailsContainer.html(await getEndorseCheckHtml(details ? details.checkId : null));
+                detailsContainer.html(getEndorseCheckHtml(details ? details.checkId : null));
                 paymentAmountInput.prop('readonly', true);
                 if (details) {
                     paymentAmountInput.val(details.amount);
@@ -307,33 +311,22 @@ const InvoiceManager = (function () {
             paymentTypeSelect.val(payment.type);
             paymentAmountInput.val(Number(payment.amount).toLocaleString('en-US'));
             paymentDateInput.val(payment.date);
-            await updateDetails(payment.type, payment);
+            updateDetails(payment.type, payment);
         } else {
             paymentDateInput.val(UI.today());
-            await updateDetails('cash', null);
+            updateDetails('cash', null);
         }
         $(containerSelector).append(row);
         UI.initializeDatepickers();
     }
 
-    function prepareInvoiceModal(type, invoice = null) {
-        const modalId = `#${type}InvoiceModal`;
-        const formId = `#${type}-invoice-form`;
-        const itemsContainer = $(`#${type}-invoice-items-container`);
-        const paymentsContainer = $(`#${type}-invoice-payments-container`);
+    function _populateInvoiceHeader(type, formId, invoice = null) {
+        const personType = type === 'sales' ? 'customer' : 'supplier';
+        const personSelect = $(`${formId} #${type}-invoice-${personType}`);
 
-        if ($(`${formId} .select2-hidden-accessible`).length > 0) {
-            $(`${formId} .select2-hidden-accessible`).select2('destroy');
-        }
-
-        $(formId)[0].reset();
-        itemsContainer.empty();
-        paymentsContainer.empty();
-
-        const isEdit = invoice && invoice.id;
-        if (isEdit) {
+        if (invoice) {
             $(`${formId} #${type}-invoice-id`).val(invoice.id);
-            $(`${formId} #${type}-invoice-date`).val(invoice.date);
+            $(`${formId} #${type}-invoice-date`).val(UI.gregorianToPersian(invoice.date));
             $(`${formId} #${type}-invoice-description`).val(invoice.description);
             $(`${formId} #${type}-invoice-discount`).val(Number(invoice.discount || 0).toLocaleString('en-US'));
         } else {
@@ -342,50 +335,81 @@ const InvoiceManager = (function () {
             $(`${formId} #${type}-invoice-discount`).val('0');
         }
 
-        const personSelectId = `#${type}-invoice-${type === 'sales' ? 'customer' : 'supplier'}`;
-        const personSelect = $(personSelectId);
-        personSelect.empty();
-        
-        if (isEdit) {
-            const personId = type === 'sales' ? invoice.customerId : invoice.supplierId;
-            const personName = type === 'sales' ? invoice.customerName : invoice.supplierName;
-            const option = new Option(personName, personId, true, true);
-            personSelect.append(option).trigger('change');
+        personSelect.empty().append('<option></option>');
+        const personList = type === 'sales' ? App.getCache().customers : App.getCache().suppliers;
+        (personList || []).forEach(p => personSelect.append(`<option value="${p.id}">${p.name}</option>`));
+        if (invoice) {
+            personSelect.val(type === 'sales' ? invoice.customerId : invoice.supplierId);
         }
-
         personSelect.select2({
             theme: 'bootstrap-5',
             dir: 'rtl',
-            placeholder: `انتخاب ${type === 'sales' ? 'مشتری' : 'تأمین‌کننده'}...`,
-            dropdownParent: $(modalId),
-            ajax: {
-                transport: async function(params, success, failure) {
-                    const entityType = type === 'sales' ? 'customers' : 'suppliers';
-                    const data = await Api.call('search_entities', { entityType: entityType, term: params.data.q || '' });
-                    if (data && data.results) {
-                        success(data);
-                    } else {
-                        failure();
-                    }
-                },
-                processResults: function(data) {
-                    return { results: data.results };
-                },
-                delay: 250,
-                cache: true
-            }
+            placeholder: `انتخاب ${personType === 'customer' ? 'مشتری' : 'تأمین‌کننده'}...`,
+            dropdownParent: $(`#${type}InvoiceModal`)
         });
-        
-        if (isEdit) {
-            (invoice.items || []).forEach(item => addInvoiceItemRow(itemsContainer, item));
-            (invoice.payments || []).forEach(payment => addPaymentRow(paymentsContainer, type, payment));
+        if (invoice) personSelect.trigger('change');
+    }
+
+    function _populateInvoiceItems(type, invoice = null) {
+        const itemsContainer = $(`#${type}-invoice-items-container`);
+        if (invoice && invoice.items && invoice.items.length > 0) {
+            invoice.items.forEach(item => addInvoiceItemRow(itemsContainer, item));
         }
+    }
+
+    function _populateInvoicePayments(type, invoice = null) {
+        const paymentsContainer = $(`#${type}-invoice-payments-container`);
+        if (invoice && invoice.payments) {
+            invoice.payments.forEach(payment => {
+                const pDate = UI.gregorianToPersian(payment.date);
+                addPaymentRow(paymentsContainer, type, { ...payment, date: pDate });
+            });
+        }
+    }
+
+    function _resetModal(modalId, formId, type) {
+        UI.hideModalError(modalId);
+        $(`${formId} .select2-hidden-accessible`).select2('destroy');
+        $(formId)[0].reset();
+        $(formId).removeData('original-items');
+        $(`#${type}-invoice-items-container`).empty();
+        $(`#${type}-invoice-payments-container`).empty();
+    }
+
+    async function load(tableName) {
+        UI.showLoader();
+        const state = AppConfig.TABLE_STATES[tableName];
+        state.tableName = tableName;
+        const response = await Api.call('get_paginated_data', state);
+        if (response && renderers[tableName]) {
+            renderers[tableName](response.data);
+            UI.renderPagination(tableName, response.totalRecords, state);
+            UI.updateSortIndicators(tableName, state);
+        }
+        UI.hideLoader();
+    }
+
+    function prepareInvoiceModal(type, invoice = null) {
+        const modalId = `#${type}InvoiceModal`;
+        const formId = `#${type}-invoice-form`;
+
+        _resetModal(modalId, formId, type);
+
+        if (invoice && invoice.items) {
+            $(formId).data('original-items', invoice.items);
+        }
+
+        _populateInvoiceHeader(type, formId, invoice);
+        _populateInvoiceItems(type, invoice);
+        _populateInvoicePayments(type, invoice);
 
         calculateInvoiceTotals(type);
         $(modalId).modal('show');
     }
 
     async function saveInvoice(type) {
+        const modalId = `#${type}InvoiceModal`;
+        UI.hideModalError(modalId);
         const form = $(`#${type}-invoice-form`)[0];
         if (!form.checkValidity()) {
             form.reportValidity();
@@ -396,16 +420,19 @@ const InvoiceManager = (function () {
         $(`#${type}-invoice-items-container .dynamic-row`).each(function () {
             let item = {};
             const pid = $(this).find('.product-select').val();
+            const newProdName = $(this).find('.new-product-name').val()?.trim();
 
-            if (type === 'purchase' && pid === 'new_product') {
-                item.newProductName = $(this).find('.new-product-name').val()?.trim();
+            if (type === 'purchase' && newProdName) {
+                item.newProductName = newProdName;
             } else if (pid) {
                 item.productId = parseInt(pid);
-            } else { return; }
+            } else {
+                return; // skip if neither is provided
+            }
 
             let dim = $(this).find('.dimensions-select').val();
             if (dim === 'custom') {
-                dim = $(this).find('.custom-dimension-input').val()?.trim();
+                dim = ($(this).find('.custom-dimension-input').val() || '').trim();
             }
             item.dimensions = dim;
             item.quantity = parseInt($(this).find('.quantity').val()) || 0;
@@ -420,15 +447,15 @@ const InvoiceManager = (function () {
             const p = {
                 type: $(this).find('.payment-type').val(),
                 amount: parseInt(($(this).find('.payment-amount').val() || '').replace(/,/g, '')) || 0,
-                date: $(this).find('.payment-date').val(),
+                date: UI.toGregorian($(this).find('.payment-date')),
                 description: $(this).find('.payment-description').val() || '',
                 account_id: $(this).find('.payment-account-id').val() || null
             };
-            if (p.amount <= 0) return;
+            if (p.amount <= 0 || !p.date) return;
             if (p.type === 'check') {
                 p.checkDetails = {
                     checkNumber: $(this).find('.check-number').val(),
-                    dueDate: $(this).find('.check-due-date').val(),
+                    dueDate: UI.toGregorian($(this).find('.check-due-date')),
                     bankName: $(this).find('.check-bank-name').val()
                 };
             } else if (p.type === 'endorse_check') {
@@ -443,7 +470,7 @@ const InvoiceManager = (function () {
 
         const data = {
             id: parseInt($(`#${type}-invoice-id`).val()) || null,
-            date: $(`#${type}-invoice-date`).val(),
+            date: UI.toGregorian($(`#${type}-invoice-date`)),
             items,
             payments,
             totalAmount,
@@ -451,6 +478,11 @@ const InvoiceManager = (function () {
             paidAmount,
             description: $(`#${type}-invoice-description`).val()
         };
+
+        if (!data.date) {
+            UI.showModalError(modalId, 'لطفا تاریخ فاکتور را به درستی وارد کنید.');
+            return;
+        }
 
         if (type === 'sales') data.customerId = parseInt($(`#sales-invoice-customer`).val());
         else data.supplierId = parseInt($(`#purchase-invoice-supplier`).val());
@@ -460,11 +492,14 @@ const InvoiceManager = (function () {
         UI.hideLoader();
 
         if (result?.success) {
-            $(`#${type}InvoiceModal`).modal('hide');
+            $(modalId).modal('hide');
+            await App.fetchInitialCache();
             load(`${type}_invoices`);
             App.getManager('products').load();
             App.getManager('accounts').load();
             App.getManager('checks').load();
+        } else if (result?.error) {
+            UI.showModalError(modalId, result.error);
         }
     }
 
@@ -473,9 +508,13 @@ const InvoiceManager = (function () {
         UI.confirmAction(`آیا از حذف این ${typeFa} مطمئن هستید؟`, async (confirmed) => {
             if (confirmed) {
                 UI.showLoader();
-                const result = await Api.call(`delete_${type}`, { id });
+                // **FIX START**: Correctly format the action name to snake_case
+                const action = type === 'salesInvoice' ? 'delete_sales_invoice' : 'delete_purchase_invoice';
+                const result = await Api.call(action, { id });
+                // **FIX END**
                 UI.hideLoader();
                 if (result?.success) {
+                    await App.fetchInitialCache();
                     const tableName = type === 'salesInvoice' ? 'sales_invoices' : 'purchase_invoices';
                     load(tableName);
                     App.getManager('products').load();
@@ -492,31 +531,41 @@ const InvoiceManager = (function () {
         const isSales = type === 'sales';
         const title = isSales ? 'فاکتور فروش' : 'فاکتور خرید';
         const personTitle = isSales ? 'مشتری' : 'تأمین کننده';
-        const personName = isSales ? invoice.customerName : invoice.supplierName;
+        const personData = isSales ? appCache.customers : appCache.suppliers;
         const personId = isSales ? invoice.customerId : invoice.supplierId;
+        const person = personData.find(p => p.id == personId);
+        const idLabel = isSales ? 'کد ملی' : 'کد اقتصادی';
+        const idValue = person ? (isSales ? person.nationalId : person.economicCode) : '-';
+        const invoiceDate = UI.gregorianToPersian(invoice.date);
 
         let itemsHtml = '';
         (invoice.items || []).forEach((item, index) => {
-            itemsHtml += `<tr><td>${index + 1}</td><td>${item.productName || 'محصول حذف شده'}</td><td>${item.dimensions}</td><td>${item.quantity}</td><td>${UI.formatCurrency(item.unitPrice)}</td><td>${UI.formatCurrency(item.quantity * item.unitPrice)}</td></tr>`;
+            const product = appCache.products.find(p => p.id == item.productId);
+            itemsHtml += `<tr><td>${index + 1}</td><td>${product ? product.name : 'محصول حذف شده'}</td><td>${item.dimensions}</td><td>${item.quantity}</td><td>${UI.formatCurrency(item.unitPrice)}</td><td>${UI.formatCurrency(item.quantity * item.unitPrice)}</td></tr>`;
         });
 
         let paymentsHtml = '';
         if (invoice.payments && invoice.payments.length > 0) {
             (invoice.payments || []).forEach(p => {
                 let typeText = '', detailsText = p.description || '';
+                const paymentDate = UI.gregorianToPersian(p.date);
                 switch (p.type) {
                     case 'cash': typeText = 'نقد'; break;
                     case 'check':
                         typeText = 'چک جدید';
-                        if (p.checkDetails) detailsText = `شماره: ${p.checkDetails.checkNumber}, سررسید: ${p.checkDetails.dueDate}, بانک: ${p.checkDetails.bankName}`;
+                        if (p.checkDetails) {
+                            const dueDate = UI.gregorianToPersian(p.checkDetails.dueDate);
+                            detailsText = `شماره: ${p.checkDetails.checkNumber}, سررسید: ${dueDate}, بانک: ${p.checkDetails.bankName}`;
+                        }
                         break;
                     case 'endorse_check':
                         typeText = 'خرج چک';
-                        if (p.checkDetails) detailsText = `چک شماره: ${p.checkDetails.checkNumber}, مبلغ: ${UI.formatCurrency(p.checkDetails.amount)}`;
+                        const endorsedCheck = appCache.checks.find(c => c.id == p.checkId);
+                        if (endorsedCheck) detailsText = `چک شماره: ${endorsedCheck.checkNumber}, مبلغ: ${UI.formatCurrency(endorsedCheck.amount)}`;
                         break;
                     default: typeText = p.type;
                 }
-                paymentsHtml += `<tr><td>${typeText}</td><td>${p.date}</td><td>${UI.formatCurrency(p.amount)}</td><td>${detailsText}</td></tr>`;
+                paymentsHtml += `<tr><td>${typeText}</td><td>${paymentDate}</td><td>${UI.formatCurrency(p.amount)}</td><td>${detailsText}</td></tr>`;
             });
         } else {
             paymentsHtml = '<tr><td colspan="4" class="text-center">پرداختی ثبت نشده است.</td></tr>';
@@ -530,8 +579,9 @@ const InvoiceManager = (function () {
         </head><body>
             <div class="container mt-4">
                 <h2>${title}</h2><hr>
-                <div class="row"><div class="col-6"><strong>${personTitle}:</strong> ${personName || ''}</div><div class="col-6 text-end"><strong>شماره فاکتور:</strong> ${invoice.id}</div></div>
-                <div class="row mb-3"><div class="col-6"></div><div class="col-6 text-end"><strong>تاریخ:</strong> ${invoice.date}</div></div>
+                <div class="row"><div class="col-6"><strong>${personTitle}:</strong> ${person ? person.name : (isSales ? invoice.customerName : invoice.supplierName) || ''}</div><div class="col-6 text-end"><strong>شماره فاکتور:</strong> ${invoice.id}</div></div>
+                <div class="row"><div class="col-6"><strong>آدرس:</strong> ${person?.address || '-'}</div><div class="col-6 text-end"><strong>تاریخ:</strong> ${invoiceDate}</div></div>
+                <div class="row mb-3"><div class="col-6"><strong>تلفن:</strong> ${person?.phone || '-'}</div><div class="col-6 text-end"><strong>${idLabel}:</strong> ${idValue}</div></div>
                 <h4 class="mt-4">اقلام فاکتور</h4><table class="table table-bordered"><thead><tr><th>ردیف</th><th>شرح کالا</th><th>ابعاد</th><th>تعداد</th><th>قیمت واحد</th><th>مبلغ کل</th></tr></thead><tbody>${itemsHtml}</tbody></table>
                 <h4 class="mt-4">جزئیات پرداخت</h4><table class="table table-bordered"><thead><tr><th>نوع</th><th>تاریخ</th><th>مبلغ</th><th>توضیحات/جزئیات</th></tr></thead><tbody>${paymentsHtml}</tbody></table>
                 <div class="row justify-content-end mt-4">
@@ -562,6 +612,7 @@ const InvoiceManager = (function () {
                 const result = await Api.call(action, { type, id });
                 UI.hideLoader();
                 if (result?.success) {
+                    UI.showSuccess('وضعیت امانی فاکتور با موفقیت تغییر کرد.');
                     load('sales_invoices');
                     load('purchase_invoices');
                     load('consignment_sales');
@@ -588,8 +639,9 @@ const InvoiceManager = (function () {
         }, 500);
         $('#purchase-invoice-search').on('input', function () { purchaseSearchHandler($(this).val()); });
 
-        $('body').on('input change', '#sales-invoice-form .quantity, #sales-invoice-form .unit-price, #sales-invoice-form .payment-amount, #sales-invoice-discount', () => calculateInvoiceTotals('sales'));
-        $('body').on('input change', '#purchase-invoice-form .quantity, #purchase-invoice-form .unit-price, #purchase-invoice-form .payment-amount, #purchase-invoice-discount', () => calculateInvoiceTotals('purchase'));
+        $('body').on('input change', '#sales-invoice-form .quantity, #sales-invoice-form .unit-price, #sales-invoice-form .payment-amount, #sales-invoice-discount, #sales-invoice-form .dimensions-select, #sales-invoice-form .custom-dimension-input', () => calculateInvoiceTotals('sales'));
+        $('body').on('input change', '#purchase-invoice-form .quantity, #purchase-invoice-form .unit-price, #purchase-invoice-form .payment-amount, #purchase-invoice-discount, #purchase-invoice-form .dimensions-select, #purchase-invoice-form .custom-dimension-input', () => calculateInvoiceTotals('purchase'));
+
 
         $('body').on('input change', '.dynamic-row .quantity, .dynamic-row .unit-price', function () {
             calculateInvoiceItemTotal($(this).closest('.dynamic-row'));
@@ -606,19 +658,31 @@ const InvoiceManager = (function () {
         $('#add-sales-invoice-payment-btn').on('click', () => addPaymentRow($('#sales-invoice-payments-container'), 'sales'));
         $('#add-purchase-invoice-payment-btn').on('click', () => addPaymentRow($('#purchase-invoice-payments-container'), 'purchase'));
 
-        $('body').on('select2:select', '.product-select', function(e) {
-            const data = e.params.data;
-            const row = $(this).closest('.dynamic-row');
-            const newProdInput = row.find('.new-product-name');
+        $('body').on('change', '.product-select', function () {
+            populateDimensions($(this));
+        });
 
-            if (data.id === 'new_product') {
-                newProdInput.show().focus();
-                const dimSelect = row.find('.dimensions-select').empty().prop('disabled', false).append('<option value="">انتخاب کنید...</option>');
-                AppConfig.STANDARD_CARPET_DIMENSIONS.forEach(dim => dimSelect.append(`<option value="${dim}">${dim}</option>`));
-                dimSelect.append('<option value="custom">سایز سفارشی...</option>');
+        $('body').on('click', '.btn-add-new-product-inline', function () {
+            const row = $(this).closest('.dynamic-row');
+            const select = row.find('.product-select');
+            const input = row.find('.new-product-name');
+            const dimensionsSelect = row.find('.dimensions-select');
+
+            if (input.is(':visible')) {
+                // Switching back to select mode
+                input.hide().val('');
+                select.prop('disabled', false).select2('open');
+                dimensionsSelect.empty().append('<option>ابتدا طرح را انتخاب کنید</option>').prop('disabled', true);
             } else {
-                newProdInput.hide();
-                populateDimensions({ ...data, row: row });
+                // Switching to new product input mode
+                select.val(null).trigger('change');
+                select.prop('disabled', true).select2('close');
+                input.show().focus();
+
+                // Manually populate and enable the dimensions dropdown for a new product
+                dimensionsSelect.empty().prop('disabled', false).append('<option value="">انتخاب کنید...</option>');
+                AppConfig.STANDARD_CARPET_DIMENSIONS.forEach(dim => dimensionsSelect.append(`<option value="${dim}">${dim}</option>`));
+                dimensionsSelect.append('<option value="custom">سایز سفارشی...</option>');
             }
         });
 
@@ -632,34 +696,38 @@ const InvoiceManager = (function () {
 
         $('body').on('change', '#sales-invoice-form .quantity, #sales-invoice-form .dimensions-select', function () {
             const row = $(this).closest('.dynamic-row');
-            const productSelect = row.find('.product-select');
-            const selectedData = productSelect.select2('data')[0];
-            
-            if (!selectedData || !selectedData.stock) return;
-
+            const productId = row.find('.product-select').val();
             const dimensions = row.find('.dimensions-select').val();
             const quantityInput = row.find('.quantity');
             const quantity = parseInt(quantityInput.val()) || 0;
 
-            if (!dimensions || quantity <= 0) return;
+            if (!productId || !dimensions || quantity <= 0) return;
 
-            const stockItem = selectedData.stock.find(s => s.dimensions === dimensions);
-            const availableStock = stockItem ? stockItem.quantity : 0;
-            
-            if (quantity > availableStock) {
-                alert(`موجودی برای محصول "${selectedData.text}" با ابعاد ${dimensions} فقط ${availableStock} عدد است.`);
-                quantityInput.val(availableStock);
+            const product = App.getCache().products.find(p => p.id == productId);
+            if (!product) return;
+
+            const stockItem = product.stock.find(s => s.dimensions === dimensions);
+            const stockInDb = stockItem ? stockItem.quantity : 0;
+
+            const originalItems = $(this).closest('form').data('original-items') || [];
+            const originalItem = originalItems.find(it => it.productId == productId && it.dimensions === dimensions);
+            const originalQty = originalItem ? originalItem.quantity : 0;
+            const effectiveStock = stockInDb + originalQty;
+
+            if (quantity > effectiveStock) {
+                UI.showError(`موجودی برای محصول "${product.name}" با ابعاد ${dimensions} فقط ${effectiveStock} عدد است.`);
+                quantityInput.val(effectiveStock);
                 quantityInput.trigger('input');
             }
         });
 
-        $('body').on('change', '.payment-type', async function () {
+        $('body').on('change', '.payment-type', function () {
             const row = $(this).closest('.payment-row');
             const type = $(this).val();
             const invoiceType = $(this).closest('form').attr('id').includes('sales') ? 'sales' : 'purchase';
-            const parent = row.parent();
+
+            addPaymentRow(row.parent(), invoiceType, { type: type, amount: 0, date: UI.today() });
             row.remove();
-            await addPaymentRow(parent, invoiceType, { type: type, amount: 0, date: UI.today() });
             calculateInvoiceTotals(invoiceType);
         });
 
@@ -698,6 +766,62 @@ const InvoiceManager = (function () {
         });
         $('body').on('click', '.btn-from-consignment', function () {
             handleConsignmentAction('return_from_consignment', $(this).data('type'), $(this).data('id'));
+        });
+
+        $('#add-customer-from-invoice-btn').on('click', function () {
+            const onCustomerSave = async (savedData) => {
+                UI.showSuccess('مشتری با موفقیت ذخیره شد.');
+                await App.updateCache('customers');
+                const personSelect = $('#sales-invoice-customer');
+
+                if (personSelect.data('select2')) {
+                    personSelect.select2('destroy');
+                }
+
+                personSelect.empty().append('<option></option>');
+                const customerList = App.getCache().customers || [];
+                customerList.forEach(p => personSelect.append(`<option value="${p.id}">${p.name}</option>`));
+
+                personSelect.select2({
+                    theme: 'bootstrap-5',
+                    dir: 'rtl',
+                    placeholder: `انتخاب مشتری...`,
+                    dropdownParent: $('#salesInvoiceModal')
+                });
+
+                if (savedData.id) {
+                    personSelect.val(savedData.id).trigger('change');
+                }
+            };
+            App.getManager('customers').prepareModal(null, onCustomerSave);
+        });
+
+        $('#add-supplier-from-invoice-btn').on('click', function () {
+            const onSupplierSave = async (savedData) => {
+                UI.showSuccess('تامین‌کننده با موفقیت ذخیره شد.');
+                await App.updateCache('suppliers');
+                const personSelect = $('#purchase-invoice-supplier');
+
+                if (personSelect.data('select2')) {
+                    personSelect.select2('destroy');
+                }
+
+                personSelect.empty().append('<option></option>');
+                const supplierList = App.getCache().suppliers || [];
+                supplierList.forEach(p => personSelect.append(`<option value="${p.id}">${p.name}</option>`));
+
+                personSelect.select2({
+                    theme: 'bootstrap-5',
+                    dir: 'rtl',
+                    placeholder: `انتخاب تأمین‌کننده...`,
+                    dropdownParent: $('#purchaseInvoiceModal')
+                });
+
+                if (savedData.id) {
+                    personSelect.val(savedData.id).trigger('change');
+                }
+            };
+            App.getManager('suppliers').prepareModal(null, onSupplierSave);
         });
     }
 

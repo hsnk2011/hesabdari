@@ -1,123 +1,189 @@
 <?php
 // /api/index.php
-session_start();
-ini_set('display_errors', 1); // For development only. Should be 0 in production.
-error_reporting(E_ALL);
 
-set_exception_handler(function($exception) {
-    $response = [
-        'error' => 'PHP Exception',
-        'message' => $exception->getMessage(),
-        'file' => $exception->getFile(),
-        'line' => $exception->getLine()
-    ];
-    http_response_code(500);
-    header("Content-Type: application/json; charset=UTF-8");
-    echo json_encode($response, JSON_UNESCAPED_UNICODE);
-    exit();
-});
+/**
+ * Main API Router
+ * This file routes all incoming API requests to the appropriate controller and method.
+ */
 
+// Start session and set headers
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+header("Content-Type: application/json; charset=UTF-8");
+
+// Load essential files
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/core/helpers.php';
 
+// --- SECURITY IMPROVEMENT: CSRF TOKEN VALIDATION ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_GET['action'] ?? '';
+    if ($action !== 'login') {
+        if (!verify_csrf_token()) {
+            send_json(['error' => 'درخواست نامعتبر است. لطفاً صفحه را رفرش کرده و مجدداً تلاش کنید.'], 403);
+            exit();
+        }
+    }
+}
+// --- END SECURITY IMPROVEMENT ---
+
+
+// Database Connection
 $conn = new mysqli(DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME);
 if ($conn->connect_error) {
-    send_json(['error' => 'Database connection failed: ' . $conn->connect_error], 500);
+    send_json(['error' => 'Connection failed: ' . $conn->connect_error], 500);
 }
 $conn->set_charset("utf8mb4");
 
-$action = $_GET['action'] ?? '';
-$input_data = json_decode(file_get_contents('php://input'), true);
+// Load Controllers
+require_once __DIR__ . '/controllers/AuthController.php';
+require_once __DIR__ . '/controllers/DataController.php';
+require_once __DIR__ . '/controllers/EntityController.php';
+require_once __DIR__ . '/controllers/CustomerController.php';
+require_once __DIR__ . '/controllers/SupplierController.php';
+require_once __DIR__ . '/controllers/ProductController.php';
+require_once __DIR__ . '/controllers/ExpenseController.php';
+require_once __DIR__ . '/controllers/InvoiceController.php';
+require_once __DIR__ . '/controllers/PaymentController.php';
+require_once __DIR__ . '/controllers/CheckController.php';
+require_once __DIR__ . '/controllers/AccountController.php';
+require_once __DIR__ . '/controllers/ReportController.php';
+require_once __DIR__ . '/controllers/PartnerController.php';
+require_once __DIR__ . '/controllers/TransactionController.php';
+require_once __DIR__ . '/controllers/SettingsController.php';
+require_once __DIR__ . '/controllers/InventoryController.php'; // This controller has been patched
+require_once __DIR__ . '/controllers/ShareController.php';
 
-$public_actions = ['login', 'check_session', 'logout'];
+
+// Get the requested action
+$action = $_GET['action'] ?? '';
+$data = json_decode(file_get_contents('php://input'), true) ?? [];
+
+// Public actions (no session required)
+$public_actions = ['login'];
+
+// Check if user is logged in for protected actions
 if (!in_array($action, $public_actions) && !isset($_SESSION['user_id'])) {
     send_json(['error' => 'Authentication required.'], 401);
 }
 
-// ---- Main Routing Table ----
-$routes = [
-    // Auth Routes
-    'login' => ['AuthController', 'login'],
-    'logout' => ['AuthController', 'logout'],
-    'register' => ['AuthController', 'register'],
-    'check_session' => ['AuthController', 'checkSession'],
-    'change_password' => ['AuthController', 'changePassword'],
-    'admin_reset_password' => ['AuthController', 'adminResetPassword'],
-    'delete_user' => ['AuthController', 'deleteUser'],
-    
-    // Data Fetching Routes
-    'get_dashboard_data' => ['DataController', 'getDashboardData'],
-    'get_full_customers_list' => ['DataController', 'getFullCustomersList'],
-    'get_full_suppliers_list' => ['DataController', 'getFullSuppliersList'],
-    'get_full_products_list' => ['DataController', 'getFullProductsList'],
-    'get_partners' => ['DataController', 'getPartners'],
-    'get_full_accounts_list' => ['DataController', 'getFullAccountsList'],
-    'get_entity_by_id' => ['DataController', 'getEntityById'],
-    'search_entities' => ['DataController', 'searchEntities'], // <-- مسیر جدید برای جستجو
-    
-    // Account Routes
-    'get_accounts_paginated' => ['AccountController', 'getPaginated'],
-    'save_account' => ['AccountController', 'save'],
-    'delete_account' => ['AccountController', 'delete'],
-    'get_account_transactions' => ['AccountController', 'getAccountTransactions'],
+// Instantiate controllers
+$authController = new AuthController($conn);
+$dataController = new DataController($conn);
+$entityController = new EntityController($conn);
+$customerController = new CustomerController($conn);
+$supplierController = new SupplierController($conn);
+$productController = new ProductController($conn);
+$expenseController = new ExpenseController($conn);
+$invoiceController = new InvoiceController($conn);
+$paymentController = new PaymentController($conn);
+$checkController = new CheckController($conn);
+$accountController = new AccountController($conn);
+$reportController = new ReportController($conn);
+$partnerController = new PartnerController($conn);
+$transactionController = new TransactionController($conn);
+$settingsController = new SettingsController($conn);
+$inventoryController = new InventoryController($conn);
+$shareController = new ShareController($conn);
 
-    // Invoice Routes
-    'save_sales_invoice' => ['InvoiceController', 'saveSalesInvoice'],
-    'delete_salesInvoice' => ['InvoiceController', 'deleteSalesInvoice'],
-    'save_purchase_invoice' => ['InvoiceController', 'savePurchaseInvoice'],
-    'delete_purchaseInvoice' => ['InvoiceController', 'deletePurchaseInvoice'],
-    'mark_as_consignment' => ['InvoiceController', 'markAsConsignment'],
-    'return_from_consignment' => ['InvoiceController', 'returnFromConsignment'],
 
-    // Partner Routes
-    'save_partner' => ['PartnerController', 'savePartner'],
-    'delete_partner' => ['PartnerController', 'deletePartner'],
-    'save_partner_transaction' => ['PartnerController', 'savePartnerTransaction'],
-    'delete_partnerTransaction' => ['PartnerController', 'deletePartnerTransaction'],
+// Route the request
+switch ($action) {
+    // Auth
+    case 'login': $authController->login($data); break;
+    case 'logout': $authController->logout(); break;
+    case 'register': $authController->register($data); break;
+    case 'check_session': $authController->checkSession(); break;
+    case 'change_password': $authController->changePassword($data); break;
+    case 'admin_reset_password': $authController->adminResetPassword($data); break;
+    case 'delete_user': $authController->deleteUser($data); break;
 
-    // Generic Entity Routes
-    'get_paginated_data' => ['EntityController', 'getPaginatedData'],
-    'save_customer' => ['EntityController', 'saveCustomer'],
-    'delete_customer' => ['EntityController', 'deleteCustomer'],
-    'save_supplier' => ['EntityController', 'saveSupplier'],
-    'delete_supplier' => ['EntityController', 'deleteSupplier'],
-    'save_product' => ['EntityController', 'saveProduct'],
-    'delete_product' => ['EntityController', 'deleteProduct'],
-    'save_expense' => ['EntityController', 'saveExpense'],
-    'delete_expense' => ['EntityController', 'deleteExpense'],
+    // Data Fetching (Dropdowns, Dashboard, etc.)
+    case 'get_dashboard_data': $dataController->getDashboardData(); break;
+    case 'get_notifications': $dataController->getNotifications(); break;
+    case 'get_due_checks_list': $dataController->getDueChecksList(); break;
+    case 'get_entity_by_id': $dataController->getEntityById($data); break;
+    case 'get_full_customers_list': $dataController->getFullCustomersList(); break;
+    case 'get_full_suppliers_list': $dataController->getFullSuppliersList(); break;
+    case 'get_full_products_list': $dataController->getFullProductsList(); break;
+    case 'get_partners': $dataController->getPartners(); break;
+    case 'get_full_accounts_list': $dataController->getFullAccountsList(); break;
     
-    // Check Routes
-    'cash_check' => ['CheckController', 'cash'],
-    'clear_payable_check' => ['CheckController', 'clearPayable'],
-    
-    // Report Routes
-    'get_profit_loss_report' => ['ReportController', 'getProfitLossReport'],
-    'get_person_statement' => ['ReportController', 'getPersonStatement'],
-    'get_account_statement' => ['ReportController', 'getAccountStatement'],
-    'get_invoices_report' => ['ReportController', 'getInvoicesReport'],
-    'get_expenses_report' => ['ReportController', 'getExpensesReport'],
-    'get_inventory_report' => ['ReportController', 'getInventoryReport'],
-    'get_inventory_value_report' => ['ReportController', 'getInventoryValueReport'],
-    'get_inventory_ledger_report' => ['ReportController', 'getInventoryLedgerReport'],
-];
+    // Generic Paginated Data
+    case 'get_paginated_data':
+        $tableName = $data['tableName'] ?? '';
+        if ($tableName === 'transactions') {
+            $transactionController->getPaginatedData($data);
+        } else {
+            $entityController->getPaginatedData($data);
+        }
+        break;
 
-// ---- Route Dispatcher ----
-if (isset($routes[$action])) {
-    list($controllerName, $methodName) = $routes[$action];
+    // Entity Specific Actions (Save/Delete)
+    case 'save_customer': $customerController->save($data); break;
+    case 'delete_customer': $customerController->delete($data); break;
+    case 'save_supplier': $supplierController->save($data); break;
+    case 'delete_supplier': $supplierController->delete($data); break;
+    case 'save_product': $productController->save($data); break;
+    case 'delete_product': $productController->delete($data); break;
+    case 'save_expense': $expenseController->save($data); break;
+    case 'delete_expense': $expenseController->delete($data); break;
+    case 'save_account': $accountController->save($data); break;
+    case 'delete_account': $accountController->delete($data); break;
+    case 'get_account_transactions': $accountController->getAccountTransactions($data); break;
+    case 'save_partner': $partnerController->savePartner($data); break;
+    case 'delete_partner': $partnerController->deletePartner($data); break;
+
+    // Invoice Actions
+    case 'save_sales_invoice': $invoiceController->saveSalesInvoice($data); break;
+    case 'delete_sales_invoice': $invoiceController->deleteSalesInvoice($data); break;
+    case 'save_purchase_invoice': $invoiceController->savePurchaseInvoice($data); break;
+    case 'delete_purchase_invoice': $invoiceController->deletePurchaseInvoice($data); break;
+    case 'mark_as_consignment': $invoiceController->markAsConsignment($data); break;
+    case 'return_from_consignment': $invoiceController->returnFromConsignment($data); break;
+
+    // Payment & Check Actions
+    case 'save_payment': $paymentController->savePayment($data); break;
+    case 'delete_payment': $paymentController->deletePayment($data); break;
+    case 'cash_check': $checkController->cash($data); break;
+    case 'clear_payable_check': $checkController->clearPayable($data); break;
+    case 'save_check': $checkController->save($data); break;
+    case 'delete_check': $checkController->delete($data); break;
+
+    // Reports
+    case 'get_profit_loss_report': $reportController->getProfitLossReport($data); break;
+    case 'get_invoices_report': $reportController->getInvoicesReport($data); break;
+    case 'get_inventory_ledger_report': $reportController->getInventoryLedgerReport($data); break;
+    case 'get_person_statement': $reportController->getPersonStatement($data); break;
+    case 'get_account_statement': $reportController->getAccountStatement($data); break;
+    case 'get_expenses_report': $reportController->getExpensesReport($data); break;
+    case 'get_inventory_report': $reportController->getInventoryReport($data); break;
+    case 'get_inventory_value_report': $reportController->getInventoryValueReport($data); break;
+    case 'get_cogs_profit_report': $reportController->getCogsProfitReport($data); break;
+    case 'export_report': $reportController->exportReport($_GET); break; // Note: Uses GET
+
+    // Settings
+    case 'switch_entity': $settingsController->switchEntity($data); break;
+    case 'get_app_settings': $settingsController->getAppSettings(); break;
+    case 'save_app_settings': $settingsController->saveAppSettings($data); break;
+
+    // Inventory Module Actions (Temporarily disabled unused parts)
+    case 'list_warehouses': $inventoryController->listWarehouses($data); break;
+    case 'transfer_stock': $inventoryController->transfer($data); break;
     
-    $controllerFile = __DIR__ . '/controllers/' . $controllerName . '.php';
-    
-    if (file_exists($controllerFile)) {
-        require_once $controllerFile;
-        $controller = new $controllerName($conn);
-        $controller->$methodName($input_data);
-    } else {
-        send_json(['error' => "Server error: Controller file not found for '{$controllerName}'."], 500);
-    }
-} else {
-    send_json(['error' => 'Action not found: ' . htmlspecialchars($action)], 404);
+    // Product Attributes and Variants
+    case 'update_product_attributes': $productController->updateAttributes($data); break;
+    case 'list_product_variants': $productController->listVariants($data); break;
+    case 'label_data': $productController->labelData($data); break;
+
+    // Sharing Module
+    case 'generate_proforma': $shareController->generateProforma($data); break;
+
+
+    default:
+        send_json(['error' => 'Action not found.'], 404);
+        break;
 }
 
-if ($conn->thread_id) {
-    $conn->close();
-}
+$conn->close();
