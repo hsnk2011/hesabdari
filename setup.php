@@ -270,7 +270,7 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && $step == 2) || (file_exists($confi
                     <p>می‌توانید با اطلاعات زیر وارد سیستم شوید:</p>
                     <ul class="list-unstyled">
                         <li><strong>نام کاربری:</strong> <code>admin</code></li>
-                        <li><strong>رمز عبور (پیش‌فرض):</strong> <code>admin123</code></li>
+                        <li><strong>رمز عبور:</strong> رمز تصادفی نمایش‌داده‌شده در بالا (اگر کاربر admin از قبل وجود داشت، همان رمز فعلی)</li>
                     </ul>
                     <p class="text-muted">پس از ورود، حتماً از طریق بخش "تغییر رمز" رمز عبور خود را تغییر دهید.</p>
                     

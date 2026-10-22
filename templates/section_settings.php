@@ -475,8 +475,8 @@
                                     </div>
                                     <div class="col-md-4" id="sms-sender-wrap">
                                         <label for="sms-sender" class="form-label">خط ارسال‌کننده (Sender)</label>
-                                        <input type="text" class="form-control" id="sms-sender" placeholder="9981803830" dir="ltr">
-                                        <div class="form-text">شماره خط اختصاصی کاوه‌نگار، دقیقاً مثل پنل (مثال: <code dir="ltr">9981803830</code>)</div>
+                                        <input type="text" class="form-control" id="sms-sender" placeholder="1000xxxxxx" dir="ltr">
+                                        <div class="form-text">شماره خط اختصاصی کاوه‌نگار، دقیقاً مثل پنل (مثال: <code dir="ltr">1000xxxxxx</code>)</div>
                                     </div>
                                 </div>
                                 <div class="mb-0">

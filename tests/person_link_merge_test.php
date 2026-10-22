@@ -73,7 +73,7 @@ $insSupplier = function (string $name, float $initial, string $phone = '') use (
 $conn->begin_transaction();
 try {
     $link = new PersonLink($conn);
-    $name = "{$tok} کیارش";
+    $name = "{$tok} علی";
 
     // Same person entered twice: customer owes 100 + 1000, we owe the supplier 50 + 300.
     $c = $insCustomer($name, 100, '0912');
@@ -123,10 +123,10 @@ try {
     expect_true(empty($plain['combinedWith']) && count($plain['transactions']) === 2, 'statement without the option stays separate');
 
     // --- profile sync and name conflicts
-    $q("UPDATE customers SET name = '{$tok} کیارش انوشا', job = 'بنکدار' WHERE id = {$c}");
+    $q("UPDATE customers SET name = '{$tok} علی آزمایشی', job = 'بنکدار' WHERE id = {$c}");
     $link->afterSave('customer', $c, null);
     $sup = $q("SELECT name, job FROM suppliers WHERE id = {$s}")[0];
-    expect_true($sup['name'] === "{$tok} کیارش انوشا" && $sup['job'] === 'بنکدار', 'shared fields copied to the supplier twin');
+    expect_true($sup['name'] === "{$tok} علی آزمایشی" && $sup['job'] === 'بنکدار', 'shared fields copied to the supplier twin');
     $insSupplier("{$tok} دیگری", 0);
     expect_true($link->precheckSave('customer', $c, "{$tok} دیگری", null) !== null, 'rename clashing with another supplier is refused');
 
@@ -148,7 +148,7 @@ try {
 
     // --- same-type merge: duplicate customer folded into $c
     $link->merge('customer', $c, 'supplier', $s, false); // relink
-    $e = $insCustomer("{$tok} کیارش تکراری", 20, '0912');
+    $e = $insCustomer("{$tok} علی تکراری", 20, '0912');
     $q("INSERT INTO sales_invoices (entity_id, customerId, date, totalAmount, discount, tax_amount, paidAmount, is_consignment) VALUES ({$entityId}, {$e}, '{$date}', 200, 0, 0, 0, 0)");
     $eInv = (int)$conn->insert_id;
     $q("INSERT INTO payments (entity_id, person_id, person_type, transaction_type, type, amount, date) VALUES ({$entityId}, {$e}, 'customer', 'receipt', 'cash', 50, '{$date}')");

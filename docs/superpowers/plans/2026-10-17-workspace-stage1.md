@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Projects (members, tasks with review flow, checklist, prerequisites, board, reports, documents, budget) and meetings (attendees, minutes, decisions → tasks) inside hesabdari, modelled on mz7, under a «میز کار» tab.
+**Goal:** Projects (members, tasks with review flow, checklist, prerequisites, board, reports, documents, budget) and meetings (attendees, minutes, decisions → tasks) inside hesabdari, modelled on <crm-ref>, under a «میز کار» tab.
 
 **Architecture:** New tables in `api/core/schema.php`; models `WorkProject`, `WorkTask`, `WorkMeeting`, `WorkFiles`, `WorkReminders`, `MyWork` in `api/models/`; one router-mapped `WorkController`; notifications through the existing `CrmNotifier`; files in a protected `storage/work/` served only through the API. UI: the CRM tab becomes «میز کار» (`templates/section_crm.php` + new `js/work-manager.js`).
 
 **Tech Stack:** PHP 8.3 (mysqli, finfo), MySQL, jQuery + Bootstrap 5 RTL, HTML5 drag-and-drop, existing `Api.call` / `UI.*` / `UI.formDialog`.
 
-**Spec:** `docs/superpowers/specs/2026-10-17-workspace-stage1-projects-meetings-design.md` (rules ported from mz7 `src/core/projects/*`, `src/core/meetings/index.ts`).
+**Spec:** `docs/superpowers/specs/2026-10-17-workspace-stage1-projects-meetings-design.md` (rules ported from <crm-ref> `src/core/projects/*`, `src/core/meetings/index.ts`).
 
 ## Global Constraints
 - Branch `workspace-stage1`. No composer, no new JS libraries.
@@ -85,7 +85,7 @@
 - `delete(e, uid, seesAll, int $taskId)` — manager or creator; deletes deps both ways and checks.
 - `reorder(e, uid, seesAll, int $projectId, array $orderedIds)` — any member; sets `sort_order` 1..n.
 - `addCheck(...,$taskId,string $text)`, `toggleCheck(...,int $checkId, bool $done)`, `deleteCheck(...)`, `setDeps(...,int $taskId,array $ids)`.
-- `static createsCycle(int $taskId, array $newDeps, array $edges): bool` — port of mz7 `deps.ts` (edges: `[['task_id'=>, 'depends_on_id'=>], ...]`).
+- `static createsCycle(int $taskId, array $newDeps, array $edges): bool` — port of <crm-ref> `deps.ts` (edges: `[['task_id'=>, 'depends_on_id'=>], ...]`).
 - `listForProject(int $e, int $projectId, int $viewerId): array` — tasks with assignee name, checks done/total, deps, `blocked` (open prerequisites), sorted review → in_progress → by due date (nulls last) → newest; `doneLog` grouped by completion day.
 - Routes (`use_projects`): `work_task_save`, `work_task_status`, `work_task_complete`, `work_task_approve`, `work_task_return`, `work_task_reopen`, `work_task_delete`, `work_task_order`, `work_task_check` (action add|toggle|delete), `work_task_deps`.
 
