@@ -7,6 +7,7 @@ require_once __DIR__ . '/BaseModel.php';
  */
 class User extends BaseModel {
     protected $tableName = 'users';
+    protected $hasEntityId = false;
 
     /**
      * Registers a new user in the database.
@@ -17,8 +18,8 @@ class User extends BaseModel {
         if (empty($data['username']) || empty($data['password'])) {
             return ['error' => 'نام کاربری و رمز عبور الزامی است.', 'statusCode' => 400];
         }
-        if (strlen($data['password']) < 6) {
-            return ['error' => 'رمز عبور باید حداقل ۶ کاراکتر باشد.', 'statusCode' => 400];
+        if (strlen($data['password']) < MIN_PASSWORD_LENGTH) {
+            return ['error' => 'رمز عبور باید حداقل ' . MIN_PASSWORD_LENGTH . ' کاراکتر باشد.', 'statusCode' => 400];
         }
 
         $password_hash = password_hash($data['password'], PASSWORD_DEFAULT);
@@ -51,8 +52,8 @@ class User extends BaseModel {
             return ['error' => 'نام کاربری و رمز عبور الزامی است.', 'statusCode' => 400];
         }
 
-        $max_attempts = 5; // حداکثر تلاش ناموفق
-        $lockout_time_minutes = 15; // مدت زمان قفل شدن به دقیقه
+        $max_attempts = MAX_LOGIN_ATTEMPTS;
+        $lockout_time_minutes = LOCKOUT_TIME_MINUTES;
 
         $stmt = $this->conn->prepare("SELECT id, username, password_hash, failed_login_attempts, lockout_until FROM `{$this->tableName}` WHERE username = ?");
         $stmt->bind_param("s", $data['username']);
@@ -116,8 +117,8 @@ class User extends BaseModel {
         if (empty($currentPassword) || empty($newPassword)) {
             return ['error' => 'رمز عبور فعلی و جدید الزامی است.', 'statusCode' => 400];
         }
-        if (strlen($newPassword) < 6) {
-            return ['error' => 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد.', 'statusCode' => 400];
+        if (strlen($newPassword) < MIN_PASSWORD_LENGTH) {
+            return ['error' => 'رمز عبور جدید باید حداقل ' . MIN_PASSWORD_LENGTH . ' کاراکتر باشد.', 'statusCode' => 400];
         }
 
         $stmt = $this->conn->prepare("SELECT password_hash FROM `{$this->tableName}` WHERE id = ?");
@@ -156,8 +157,9 @@ class User extends BaseModel {
      * @return array Result of the operation.
      */
     public function adminResetPassword($userId, $newPassword) {
-        if (empty($newPassword) || strlen($newPassword) < 6) {
-            return ['error' => 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد.', 'statusCode' => 400];
+        $minLen = defined('MIN_PASSWORD_LENGTH') ? MIN_PASSWORD_LENGTH : 8;
+        if (empty($newPassword) || strlen($newPassword) < $minLen) {
+            return ['error' => 'رمز عبور جدید باید حداقل ' . $minLen . ' کاراکتر باشد.', 'statusCode' => 400];
         }
         
         $new_password_hash = password_hash($newPassword, PASSWORD_DEFAULT);
@@ -185,5 +187,130 @@ class User extends BaseModel {
             return ['error' => 'شما نمی‌توانید حساب کاربری خود را حذف کنید.', 'statusCode' => 403];
         }
         return parent::delete($userIdToDelete);
+    }
+    
+    public function getUserAccessData($userId) {
+        $permissions = [];
+        $stmt_perms = $this->conn->prepare("
+            SELECT DISTINCT p.permission_key
+            FROM permissions p
+            JOIN role_permissions rp ON p.id = rp.permission_id
+            JOIN user_roles ur ON rp.role_id = ur.role_id
+            WHERE ur.user_id = ?
+        ");
+        $stmt_perms->bind_param("i", $userId);
+        $stmt_perms->execute();
+        $result_perms = db_stmt_to_assoc_array($stmt_perms);
+        if ($result_perms) {
+            $permissions = array_column($result_perms, 'permission_key');
+        }
+        if (!workspace_enabled($this->conn)) {
+            $permissions = array_values(array_diff($permissions, WORKSPACE_PERMISSIONS));
+        }
+
+        $entities = [];
+        $stmt_entities = $this->conn->prepare("SELECT entity_id FROM user_entity_access WHERE user_id = ?");
+        $stmt_entities->bind_param("i", $userId);
+        $stmt_entities->execute();
+        $result_entities = db_stmt_to_assoc_array($stmt_entities);
+        if ($result_entities) {
+             $entities = array_map('intval', array_column($result_entities, 'entity_id'));
+        }
+
+        return ['permissions' => $permissions, 'entities' => $entities];
+    }
+    
+    public function getAllUsersWithAccess() {
+        $users_res = $this->conn->query("SELECT id, username FROM users ORDER BY username ASC");
+        
+        $users = [];
+        if ($users_res) {
+            while ($row = $users_res->fetch_assoc()) {
+                $users[] = $row;
+            }
+        }
+        
+        if(empty($users)) return [];
+
+        $userIds = array_column($users, 'id');
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $types = str_repeat('i', count($userIds));
+        
+        $roles_stmt = $this->conn->prepare("SELECT * FROM user_roles WHERE user_id IN ($placeholders)");
+        $roles_stmt->bind_param($types, ...$userIds);
+        $roles_stmt->execute();
+        $roles_map = db_stmt_to_assoc_array($roles_stmt);
+
+        $entities_stmt = $this->conn->prepare("SELECT * FROM user_entity_access WHERE user_id IN ($placeholders)");
+        $entities_stmt->bind_param($types, ...$userIds);
+        $entities_stmt->execute();
+        $entities_map = db_stmt_to_assoc_array($entities_stmt);
+
+        foreach ($users as &$user) {
+            $user['roles'] = [];
+            foreach ($roles_map as $map) {
+                if ($map['user_id'] == $user['id']) {
+                    $user['roles'][] = $map['role_id'];
+                }
+            }
+            $user['entities'] = [];
+            foreach ($entities_map as $map) {
+                if ($map['user_id'] == $user['id']) {
+                    $user['entities'][] = $map['entity_id'];
+                }
+            }
+        }
+        
+        return $users;
+    }
+
+    public function updateUserAccess($data) {
+        $userId = intval($data['userId'] ?? 0);
+        if ($userId <= 0) {
+            return ['error' => 'شناسه کاربر نامعتبر است.', 'statusCode' => 400];
+        }
+
+        $roles = $data['roles'] ?? [];
+        $entities = $data['entities'] ?? [];
+
+        $this->conn->begin_transaction();
+        try {
+            // Sync roles
+            $stmt_del_roles = $this->conn->prepare("DELETE FROM user_roles WHERE user_id = ?");
+            $stmt_del_roles->bind_param("i", $userId);
+            $stmt_del_roles->execute();
+            $stmt_del_roles->close();
+
+            if (!empty($roles)) {
+                $stmt_add_roles = $this->conn->prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)");
+                foreach ($roles as $roleId) {
+                    $stmt_add_roles->bind_param("ii", $userId, $roleId);
+                    $stmt_add_roles->execute();
+                }
+                $stmt_add_roles->close();
+            }
+
+            // Sync entities
+            $stmt_del_entities = $this->conn->prepare("DELETE FROM user_entity_access WHERE user_id = ?");
+            $stmt_del_entities->bind_param("i", $userId);
+            $stmt_del_entities->execute();
+            $stmt_del_entities->close();
+
+            if (!empty($entities)) {
+                $stmt_add_entities = $this->conn->prepare("INSERT INTO user_entity_access (user_id, entity_id) VALUES (?, ?)");
+                foreach ($entities as $entityId) {
+                    $stmt_add_entities->bind_param("ii", $userId, $entityId);
+                    $stmt_add_entities->execute();
+                }
+                $stmt_add_entities->close();
+            }
+
+            $this->conn->commit();
+            return ['success' => true];
+
+        } catch (Exception $e) {
+            $this->conn->rollback();
+            return ['error' => 'خطا در بروزرسانی دسترسی‌ها: ' . $e->getMessage(), 'statusCode' => 500];
+        }
     }
 }

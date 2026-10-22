@@ -1,4 +1,4 @@
-<h4>گزارش فعالیت کاربران (۵۰۰ رویداد آخر)</h4>
+<h4>گزارش فعالیت کاربران (یک سال اخیر)</h4>
 <div class="table-responsive">
     <table class="table table-striped table-sm table-hover" id="activity-log-table">
         <thead class="table-light">

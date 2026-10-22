@@ -21,6 +21,11 @@
                     <input type="hidden" id="partner-id">
                     <div class="mb-3"><label for="partner-name" class="form-label">نام شریک</label><input type="text" class="form-control" id="partner-name" required></div>
                     <div class="mb-3">
+                        <label for="partner-phone" class="form-label">شماره تماس</label>
+                        <input type="text" class="form-control" id="partner-phone" placeholder="مثال: 09121234567 / 09351234567" dir="ltr">
+                        <div class="form-text">برای چند شماره با / جدا کنید. برای اعلان پیامکی چک لازم است.</div>
+                    </div>
+                    <div class="mb-3">
                         <label for="partner-share" class="form-label">سهم (مثال: 0.25 برای ۲۵٪)</label><input type="number" step="0.01" max="1" min="0" class="form-control" id="partner-share" required>
                     </div><button type="submit" class="btn btn-success w-100">ذخیره</button>
                 </form>

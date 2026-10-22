@@ -1,0 +1,9 @@
+# Project and meeting files (میز کار). Never served directly: downloads go
+# through api.php?action=work_file, which checks who may see the file.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

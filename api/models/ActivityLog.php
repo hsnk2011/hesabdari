@@ -7,6 +7,7 @@ require_once __DIR__ . '/BaseModel.php';
  */
 class ActivityLog extends BaseModel {
     protected $tableName = 'activity_log';
+    protected $hasEntityId = false;
     protected $allowedFilters = ['username', 'action_type', 'description'];
     protected $allowedSorts = ['id', 'timestamp', 'username', 'action_type'];
 }
