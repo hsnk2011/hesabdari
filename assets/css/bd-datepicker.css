@@ -1,0 +1,128 @@
+.bd-datepicker-container {
+    position: absolute;
+    z-index: 9999;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-family: 'Tahoma', 'Segoe UI', sans-serif;
+    width: 280px;
+    display: none;
+    direction: rtl;
+    user-select: none;
+    padding: 10px;
+}
+
+.bd-datepicker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.bd-datepicker-header button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    color: #555;
+    padding: 5px 10px;
+    border-radius: 4px;
+}
+
+.bd-datepicker-header button:hover {
+    background-color: #f0f0f0;
+}
+
+.bd-datepicker-title {
+    font-weight: bold;
+    color: #333;
+    cursor: pointer;
+}
+
+.bd-datepicker-weekdays {
+    display: flex;
+    margin-bottom: 5px;
+}
+
+.bd-datepicker-weekday {
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    font-weight: bold;
+}
+
+.bd-datepicker-days {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.bd-datepicker-day {
+    width: 14.28%;
+    text-align: center;
+    padding: 8px 0;
+    cursor: pointer;
+    font-size: 13px;
+    border-radius: 4px;
+    color: #333;
+}
+
+.bd-datepicker-day:hover:not(.empty) {
+    background-color: #f0f8ff;
+    color: #007bff;
+}
+
+.bd-datepicker-day.selected {
+    background-color: #007bff;
+    color: #fff;
+}
+
+.bd-datepicker-day.today {
+    border: 1px solid #007bff;
+    color: #007bff;
+}
+
+.bd-datepicker-day.today.selected {
+    color: #fff;
+}
+
+.bd-datepicker-day.empty {
+    cursor: default;
+}
+
+.bd-datepicker-footer {
+    margin-top: 10px;
+    text-align: center;
+    border-top: 1px solid #eee;
+    padding-top: 10px;
+}
+
+.bd-datepicker-today-btn {
+    background: none;
+    border: none;
+    color: #007bff;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.bd-datepicker-year-view, .bd-datepicker-month-view {
+    display: flex;
+    flex-wrap: wrap;
+    height: 200px;
+    overflow-y: auto;
+}
+
+.bd-datepicker-year-item, .bd-datepicker-month-item {
+    width: 33.33%;
+    text-align: center;
+    padding: 15px 0;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.bd-datepicker-year-item:hover, .bd-datepicker-month-item:hover {
+    background-color: #f0f0f0;
+}

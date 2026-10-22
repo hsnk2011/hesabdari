@@ -8,15 +8,19 @@ const PartnerManager = (function () {
 
         partners.forEach(p => {
             const item = $(`<li class="list-group-item d-flex justify-content-between align-items-center">
-                <div><h6 class="my-0">${p.name}</h6><small class="text-muted">سهم: ${p.share * 100}%</small></div>
+                <div>
+                    <h6 class="my-0">${UI.escapeHtml(p.name)}</h6>
+                    <small class="text-muted">سهم: ${p.share * 100}%${p.phone ? ' — ' + UI.escapeHtml(p.phone) : ''}</small>
+                </div>
                 <span>
-                    <button class="btn btn-sm btn-outline-warning btn-edit" data-type="partner"><i class="bi bi-pencil-square"></i></button> 
-                    <button class="btn btn-sm btn-outline-danger btn-delete" data-type="partner" data-id="${p.id}"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-sm btn-outline-warning btn-edit" data-type="partner" data-permission-action="manage_settings"><i class="bi bi-pencil-square"></i></button> 
+                    <button class="btn btn-sm btn-outline-danger btn-delete" data-type="partner" data-id="${p.id}" data-permission-action="manage_settings"><i class="bi bi-trash"></i></button>
                 </span>
             </li>`);
             item.find('.btn-edit').data('entity', p);
             list.append(item);
         });
+        App.applyPermissions();
     }
 
     function preparePartnerModal(partner = null) {
@@ -27,6 +31,7 @@ const PartnerManager = (function () {
             $('#partnerModalTitle').text('ویرایش شریک');
             $('#partner-id').val(partner.id);
             $('#partner-name').val(partner.name);
+            $('#partner-phone').val(partner.phone || '');
             $('#partner-share').val(partner.share);
         } else {
             $('#partnerModalTitle').text('افزودن شریک');
@@ -40,6 +45,7 @@ const PartnerManager = (function () {
         const data = {
             id: $('#partner-id').val(),
             name: $('#partner-name').val(),
+            phone: $('#partner-phone').val(),
             share: $('#partner-share').val()
         };
         UI.showLoader();
@@ -48,7 +54,8 @@ const PartnerManager = (function () {
         if (result?.success) {
             UI.showSuccess('اطلاعات شریک با موفقیت ذخیره شد.');
             $('#partnerModal').modal('hide');
-            await App.fetchInitialCache();
+            await App.updateCache(['partners', 'accounts']); // Update cache
+            refreshUI(); // Refresh the displayed list
         } else if (result?.error) {
             UI.showModalError('#partnerModal', result.error);
         }
@@ -62,7 +69,8 @@ const PartnerManager = (function () {
                 UI.hideLoader();
                 if (result?.success) {
                     UI.showSuccess('شریک با موفقیت حذف شد.');
-                    await App.fetchInitialCache();
+                    await App.updateCache(['partners', 'accounts']);
+                    refreshUI();
                 }
             }
         });

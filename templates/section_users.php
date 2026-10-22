@@ -1,6 +1,6 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4>مدیریت کاربران سیستم</h4>
-    <button class="btn btn-primary" id="show-register-modal-btn"><i class="bi bi-person-plus-fill me-2"></i>افزودن کاربر جدید</button>
+    <button class="btn btn-primary" id="show-register-modal-btn" data-permission-action="manage_settings"><i class="bi bi-person-plus-fill me-2"></i>افزودن کاربر جدید</button>
 </div>
 <div class="table-responsive">
     <table class="table table-striped table-hover" id="users-table">
@@ -32,11 +32,11 @@
                     </div>
                     <div class="mb-3">
                         <label for="register-password" class="form-label">رمز عبور</label>
-                        <input type="password" class="form-control" id="register-password" required minlength="6">
+                        <input type="password" class="form-control" id="register-password" required minlength="8">
                     </div>
                     <div class="mb-3">
                         <label for="register-password-confirm" class="form-label">تکرار رمز عبور</label>
-                        <input type="password" class="form-control" id="register-password-confirm" required minlength="6">
+                        <input type="password" class="form-control" id="register-password-confirm" required minlength="8">
                     </div>
                     <button type="submit" class="btn btn-primary w-100">ثبت نام</button>
                 </form>
@@ -59,11 +59,11 @@
                     <p>شما در حال تغییر رمز عبور برای کاربر <strong id="reset-username-display"></strong> هستید.</p>
                     <div class="mb-3">
                         <label for="reset-new-password" class="form-label">رمز عبور جدید</label>
-                        <input type="password" class="form-control" id="reset-new-password" required minlength="6">
+                        <input type="password" class="form-control" id="reset-new-password" required minlength="8">
                     </div>
                     <div class="mb-3">
                         <label for="reset-new-password-confirm" class="form-label">تکرار رمز عبور جدید</label>
-                        <input type="password" class="form-control" id="reset-new-password-confirm" required minlength="6">
+                        <input type="password" class="form-control" id="reset-new-password-confirm" required minlength="8">
                     </div>
                     <button type="submit" class="btn btn-success w-100">ذخیره رمز جدید</button>
                 </form>

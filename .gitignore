@@ -1,0 +1,75 @@
+# ============================================================
+# hesabdari - this repository is PUBLIC. Never commit secrets,
+# backups, customer/bank data or runtime files.
+# ============================================================
+
+# Sensitive / environment-specific
+api/config.php
+api/config.local.php
+.env
+.env.*
+!.env.example
+.installed
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Backups, dumps, archives (contain the full database + images)
+backups/
+*.sql
+*.sql.gz
+*.dump
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.bak
+*.old
+
+# User uploads (product images, bank slips, imports) - keep only the protection rule
+uploads/*
+!uploads/.gitkeep
+!uploads/.htaccess
+
+# Runtime logs
+logs/
+*.log
+
+# Bank statements / imports / exports (customer & bank data)
+*.xlsx
+*.xls
+*.csv
+
+# One-off local scripts and reconciliation dumps
+_tmp_*
+backend/scripts/.tmp-*
+api/scripts/.tmp-*
+
+# Internal security/deploy audit notes (infrastructure details)
+docs/deploy/AUDIT-*.md
+docs/private/
+
+# Runtime state of the scheduler / locks / cache
+*.lock
+scheduler_state.json
+cache/
+
+# Local tooling
+.claude/
+.firecrawl/
+.cursor/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Workspace (میز کار) file storage - server data, never committed
+storage/work/*
+!storage/work/.gitkeep
+
+# Business reports built from production data (customers, sales, bank figures)
+docs/needs-assessment-*.md

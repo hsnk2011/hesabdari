@@ -1,0 +1,142 @@
+/* /assets/css/print-label.css */
+/* استایل پیش‌نمایش لیبل در مودال */
+
+.label-preview-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 10px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.label-preview-container .label-item {
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    min-height: 140px;
+    background: #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.label-preview-container .label-header {
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+.label-preview-container .product-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #000;
+}
+
+.label-preview-container .label-content {
+    display: flex;
+    flex: 1;
+    gap: 10px;
+}
+
+.label-preview-container .label-info {
+    flex: 1;
+    font-size: 11px;
+}
+
+.label-preview-container .info-row {
+    margin-bottom: 4px;
+}
+
+.label-preview-container .info-label {
+    font-weight: 600;
+    color: #666;
+}
+
+.label-preview-container .label-qr {
+    width: 110px;
+    flex: 0 0 110px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.label-preview-container .qr-canvas {
+    width: 100px !important;
+    height: 100px !important;
+}
+
+.label-preview-container .label-footer {
+    border-top: 1px solid #eee;
+    padding-top: 8px;
+    margin-top: auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.label-preview-container .label-price {
+    font-size: 14px;
+    font-weight: 700;
+    color: #198754;
+}
+
+.label-preview-container .serial-id {
+    font-family: monospace;
+    font-size: 11px;
+    color: #666;
+}
+
+.label-preview-container .label-empty {
+    border: 1px dashed #ccc;
+    background: #f9f9f9;
+}
+
+/* مودال چاپ لیبل */
+#barcodePrintModal .modal-dialog {
+    max-width: 700px;
+}
+
+#barcodePrintModal .modal-body {
+    background: #f5f5f5;
+    padding: 15px;
+}
+
+@media print {
+    /* مخفی کردن تمام عناصر صفحه به جز لیبل */
+    body * {
+        visibility: hidden;
+    }
+
+    #barcodePrintModal .modal-body,
+    #barcodePrintModal .modal-body * {
+        visibility: visible;
+    }
+
+    #barcodePrintModal {
+        position: absolute;
+        left: 0;
+        top: 0;
+        margin: 0;
+        padding: 0;
+        overflow: visible !important;
+        width: 100%;
+        height: auto;
+    }
+
+    .modal-dialog {
+        max-width: 100%;
+        margin: 0;
+    }
+
+    .modal-content {
+        border: none;
+        box-shadow: none;
+    }
+
+    .modal-header,
+    .modal-footer {
+        display: none;
+    }
+}

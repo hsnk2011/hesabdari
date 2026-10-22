@@ -1,0 +1,11 @@
+# Uploaded images only: script files here are never served or executed.
+# (Same directive style as backups/.htaccess, which works with this host's AllowOverride.)
+<FilesMatch "\.(php[0-9]?|phtml|phar|pl|py|cgi|sh|shtml|htaccess)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

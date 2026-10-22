@@ -43,12 +43,10 @@ const Auth = (function () {
             const errorDiv = $('#login-error');
             errorDiv.text('');
 
-            // FIX: The login API now returns the full session object.
             const result = await Api.call('login', { username: $('#username').val(), password: $('#password').val() }, false);
             UI.hideLoader();
 
             if (result && result.success) {
-                // No need to call checkSession anymore. The login result has everything.
                 self.showMainApp(result);
             } else if (result && result.error) {
                 errorDiv.text(result.error);
@@ -80,8 +78,8 @@ const Auth = (function () {
                 UI.showModalError('#registerModal', 'رمزهای عبور مطابقت ندارند.');
                 return;
             }
-            if (password.length < 6) {
-                UI.showModalError('#registerModal', 'رمز عبور باید حداقل ۶ کاراکتر باشد.');
+            if (password.length < 8) {
+                UI.showModalError('#registerModal', 'رمز عبور باید حداقل ۸ کاراکتر باشد.');
                 return;
             }
             const result = await Api.call('register', { username, password });
@@ -111,8 +109,8 @@ const Auth = (function () {
                 UI.showModalError('#changePasswordModal', 'رمزهای جدید مطابقت ندارند.');
                 return;
             }
-            if (new_password.length < 6) {
-                UI.showModalError('#changePasswordModal', 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد.');
+            if (new_password.length < 8) {
+                UI.showModalError('#changePasswordModal', 'رمز عبور جدید باید حداقل ۸ کاراکتر باشد.');
                 return;
             }
 
@@ -144,8 +142,8 @@ const Auth = (function () {
                 UI.showModalError('#resetPasswordModal', 'رمزهای عبور مطابقت ندارند.');
                 return;
             }
-            if (newPassword.length < 6) {
-                UI.showModalError('#resetPasswordModal', 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد.');
+            if (newPassword.length < 8) {
+                UI.showModalError('#resetPasswordModal', 'رمز عبور جدید باید حداقل ۸ کاراکتر باشد.');
                 return;
             }
 

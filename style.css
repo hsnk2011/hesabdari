@@ -8,7 +8,6 @@ body {
 /* Default Layout Styles */
 .main-container {
     display: none;
-    /* Hide main app by default */
     padding-top: 20px;
 }
 
@@ -18,12 +17,42 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.85);
     z-index: 9999;
     display: flex;
     justify-content: center;
     align-items: center;
 }
+
+.loader-inner {
+    max-width: 420px;
+    padding: 1.25rem 1.5rem;
+}
+
+.loader-message {
+    color: #333;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    white-space: pre-line;
+}
+
+/* فقط یک تب اصلی هم‌زمان دیده شود (جلوگیری از قاطی شدن حسابرس/تنظیمات) */
+/* fade را برای تب‌های اصلی غیرفعال می‌کنیم تا callback تأخیری Bootstrap
+   باعث نشود pane با active و بدون show (محتوای نامرئی) گیر کند. */
+#mainTabContent > .tab-pane.fade {
+    transition: none !important;
+}
+#mainTabContent > .tab-pane.fade:not(.show) {
+    opacity: 1;
+}
+#mainTabContent > .tab-pane:not(.active) {
+    display: none !important;
+}
+#mainTabContent > .tab-pane.active {
+    display: block !important;
+    opacity: 1;
+}
+
 
 /* Login Styles */
 #login-overlay {
@@ -35,7 +64,6 @@ body {
     background-color: #f8f9fa;
     z-index: 10000;
     display: none;
-    /* Initially hidden, JS will show it */
     justify-content: center;
     align-items: center;
 }
@@ -87,13 +115,507 @@ body {
     border-bottom: none;
 }
 
-.search-box {
+/* --- Invoice form sections (sales / purchase) --- */
+/* Hidden by permission (wins over Bootstrap display utilities). */
+.perm-hidden {
+    display: none !important;
+}
+
+.invoice-form .invoice-section {
+    background: #f7f8fa;
+    border: 1px solid #e3e6eb;
+    border-radius: 10px;
     margin-bottom: 1rem;
+    overflow: hidden;
+}
+.invoice-form .invoice-section-head {
+    background: #eef1f5;
+    border-bottom: 1px solid #e3e6eb;
+    padding: 0.55rem 0.85rem;
+}
+.invoice-form .invoice-section-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #334155;
+}
+.invoice-form .invoice-section-body {
+    padding: 0.85rem;
+    background: #f7f8fa;
+}
+.invoice-form .invoice-section-meta {
+    border-inline-start: 3px solid #64748b;
+}
+.invoice-form .invoice-section-items {
+    border-inline-start: 3px solid #0d6efd;
+}
+.invoice-form .invoice-section-payments {
+    border-inline-start: 3px solid #198754;
+}
+.invoice-form .invoice-section-totals {
+    border-inline-start: 3px solid #fd7e14;
+    background: #fffaf5;
+}
+.invoice-form .invoice-section-totals .invoice-section-head {
+    background: #fff3e6;
+}
+.invoice-form .invoice-section-totals .invoice-section-body {
+    background: #fffaf5;
+}
+.invoice-form .invoice-totals-list .list-group-item {
+    background: transparent;
+}
+.invoice-form .invoice-advance-card {
+    margin-top: 0.5rem;
+}
+
+.invoice-form .invoice-item-card,
+.invoice-form .invoice-payment-card {
+    background: #fff;
+    border: 1px solid #dde1e7 !important;
+    border-radius: 8px;
+    padding: 0.75rem 0.85rem;
+    margin: 0 0 0.75rem;
+    border-bottom: 1px solid #dde1e7 !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.invoice-form .invoice-item-card:last-child,
+.invoice-form .invoice-payment-card:last-child {
+    margin-bottom: 0.75rem;
+}
+.invoice-form .service-row.invoice-item-card {
+    border-inline-start: 3px solid #0dcaf0 !important;
+}
+.invoice-form .invoice-payment-card {
+    border-inline-start: 3px solid #198754 !important;
+}
+.invoice-form .invoice-payment-card.is-from-advance {
+    border-color: #0dcaf0 !important;
+    border-inline-start-color: #0dcaf0 !important;
+    background: #f0fbfc;
+}
+.invoice-form .invoice-row-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.15rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px dashed #e5e7eb;
+}
+.invoice-form .invoice-item-row-num {
+    width: 1.75rem;
+    min-width: 1.75rem;
+    flex: 0 0 auto;
+    padding-bottom: 0.15rem;
+}
+.invoice-form .invoice-item-row-num .invoice-row-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: #eef2f7;
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.invoice-form .service-row .invoice-item-row-num .invoice-row-number {
+    background: #e7f7fb;
+    color: #0c6c84;
+}
+.invoice-form .invoice-payment-card .invoice-item-row-num .invoice-row-number {
+    background: #e8f6ee;
+    color: #146c43;
+}
+.invoice-form .invoice-row-toolbar .invoice-row-number.badge {
+    font-size: 0.72rem;
+    vertical-align: middle;
+}
+.invoice-form .item-total {
+    font-weight: 600;
+    background: #f8fafc;
+}
+
+/* Select2 bootstrap-5 theme drops overflow/ellipsis; long product names then
+   expand flex columns (min-width:auto) and paint over the next invoice field. */
+.invoice-form .invoice-item-card > [class*="col-"],
+.product-selection-container,
+.dimensions-container {
+    min-width: 0;
+}
+.invoice-form .invoice-item-card .select2-container,
+.product-selection-container .select2-container {
+    width: 100% !important;
+    max-width: 100%;
+}
+.invoice-form .product-selection-container .input-group,
+.invoice-form .invoice-section-meta .input-group {
+    flex-wrap: nowrap;
+    width: 100%;
+    min-width: 0;
+}
+.invoice-form .product-selection-container .input-group .select2-container,
+.invoice-form .invoice-section-meta .input-group .select2-container {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto !important;
+    max-width: 100%;
+}
+.select2-container--bootstrap-5 .select2-selection--single {
+    overflow: hidden;
+}
+.select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+    display: block;
+    overflow: hidden !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+.invoice-form .payment-details-container {
+    min-width: 0;
+}
+.invoice-form .check-details-grid .form-control,
+.invoice-form .payment-amount,
+.invoice-form .payment-date,
+.invoice-form .payment-description,
+.invoice-form .unit-price,
+.invoice-form .meter-price,
+.invoice-form .quantity {
+    text-align: right;
+}
+
+.invoice-form .price-suggestions-wrap {
+    min-width: 0;
+    display: none;
+}
+.invoice-form .price-suggestions-wrap.is-visible {
+    display: block;
+}
+.invoice-form .price-suggestions {
+    margin-top: 0.15rem;
+    padding-top: 0.35rem;
+    border-top: 1px dashed #e5e7eb;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.5rem;
+}
+.invoice-form .price-suggestions-label {
+    font-size: 0.68rem;
+    color: #6c757d;
+    margin: 0;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+.invoice-form .price-suggestions-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.invoice-form .price-suggest-chip {
+    border: 1px solid #cfe2ff;
+    background: #f0f6ff;
+    color: #0b5ed7;
+    font-size: 0.68rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+.invoice-form .price-suggest-chip.is-person {
+    border-color: #badbcc;
+    background: #edf8f1;
+    color: #0f5132;
+}
+.invoice-form .price-suggest-chip.is-similar:not(.is-person) {
+    border-color: #ffe69c;
+    background: #fff8e6;
+    color: #997404;
+}
+.invoice-form .price-suggest-chip:hover {
+    filter: brightness(0.97);
+    border-color: currentColor;
+}
+.invoice-form .price-suggest-unit {
+    font-size: 0.62rem;
+    opacity: 0.85;
+}
+
+/* Bootstrap RTL maps .text-end to left; keep payment row values on the right. */
+.invoice-form .invoice-section-payments .form-control,
+.invoice-form .invoice-section-payments .form-select {
+    text-align: right !important;
+}
+
+@media (min-width: 768px) {
+    /* Payment row: shrink نوع/تاریخ, give the leftover width to شماره چک and صادرکننده. */
+    .invoice-form .invoice-payment-card {
+        flex-wrap: wrap;
+        align-items: flex-end;
+        column-gap: 0.4rem;
+        row-gap: 0.35rem;
+        --bs-gutter-x: 0;
+        --bs-gutter-y: 0;
+    }
+    .invoice-form .invoice-payment-card > [class*="col-"] {
+        width: auto;
+        max-width: none;
+        min-width: 0;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .invoice-form .invoice-payment-card > .pay-col-num {
+        flex: 0 0 1.75rem;
+        width: 1.75rem;
+    }
+    .invoice-form .invoice-payment-card > .pay-col-dir {
+        flex: 1.05 1 9.25rem;
+    }
+    .invoice-form .invoice-payment-card > .pay-col-type {
+        flex: 0 1 8.4rem;
+        max-width: 9.1rem;
+    }
+    .invoice-form .invoice-payment-card[data-payment-kind="endorse_check"] > .pay-col-type {
+        flex: 0 1 10.25rem;
+        max-width: 11rem;
+    }
+    .invoice-form .invoice-payment-card > .pay-col-amount {
+        flex: 0.95 1 7.75rem;
+    }
+    .invoice-form .invoice-payment-card > .pay-col-date {
+        flex: 0 1 7.85rem;
+        max-width: 8.4rem;
+    }
+    .invoice-form .invoice-payment-card > .pay-col-details {
+        flex: 4.6 1 24rem;
+    }
+    .invoice-form .invoice-payment-card > .pay-col-remove {
+        flex: 0 0 2.25rem;
+        width: 2.25rem;
+    }
+    .invoice-form .invoice-payment-card > .payment-advance-note {
+        flex: 0 0 100%;
+        width: 100%;
+        max-width: 100%;
+    }
+    .invoice-form .invoice-payment-card .check-details-grid,
+    .invoice-form .invoice-payment-card .payment-details-container > .row {
+        flex-wrap: nowrap;
+        align-items: flex-end;
+        width: 100%;
+        margin: 0;
+        column-gap: 0.4rem;
+        --bs-gutter-x: 0;
+        --bs-gutter-y: 0;
+    }
+    .invoice-form .invoice-payment-card .check-details-grid > [class*="col-"],
+    .invoice-form .invoice-payment-card .payment-details-container > .row > [class*="col-"] {
+        width: auto;
+        max-width: none;
+        min-width: 0;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .invoice-form .invoice-payment-card .pay-col-check-no {
+        flex: 1.7 1 10.5rem;
+    }
+    .invoice-form .pay-col-check-no .input-group {
+        flex-wrap: nowrap;
+    }
+    .invoice-form .scan-sayad-btn {
+        padding-inline: 0.45rem;
+    }
+    .invoice-form .invoice-payment-card .pay-col-due {
+        flex: 0.7 1 6.4rem;
+        max-width: 7.35rem;
+    }
+    .invoice-form .invoice-payment-card .pay-col-bank {
+        flex: 0.9 1 6.75rem;
+    }
+    .invoice-form .invoice-payment-card .pay-col-issuer {
+        flex: 1.7 1 10rem;
+    }
+    .invoice-form .invoice-payment-card .pay-col-account {
+        flex: 1.35 1 9rem;
+    }
+    .invoice-form .invoice-payment-card .pay-col-note {
+        flex: 1 1 7rem;
+    }
+}
+
+@media (min-width: 768px) {
+    .invoice-form .invoice-section-body {
+        padding: 1rem 1.1rem;
+    }
+    .invoice-form .invoice-item-card,
+    .invoice-form .invoice-payment-card {
+        padding: 0.85rem 1rem;
+    }
+    /* Fullscreen invoice: keep qty/price/dims compact; leftover width goes to product name. */
+    .invoice-form .invoice-item-card:not(.service-row):not(.asset-item-row) {
+        display: grid;
+        grid-template-columns:
+            1.75rem
+            minmax(14rem, 1.5fr)
+            minmax(11.5rem, 1.05fr)
+            minmax(7rem, 0.7fr)
+            4.5rem
+            minmax(7.25rem, 9.25rem)
+            minmax(7.75rem, 10.5rem)
+            2.4rem;
+        column-gap: 0.45rem;
+        row-gap: 0.35rem;
+        align-items: end;
+    }
+    .invoice-form .invoice-item-card:not(.service-row):not(.asset-item-row) > .price-suggestions-wrap {
+        grid-column: 1 / -1;
+    }
+    .invoice-form .invoice-item-card:not(.service-row):not(.asset-item-row) > * {
+        width: auto;
+        max-width: none;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .invoice-form .invoice-section-meta .invoice-meta-row-main {
+        display: grid;
+        grid-template-columns:
+            minmax(10.5rem, 13.25rem)
+            minmax(8rem, 10.25rem)
+            minmax(7.25rem, 9.25rem)
+            minmax(8rem, 1.2fr)
+            minmax(8.5rem, 11rem)
+            auto;
+        gap: 0.5rem 0.65rem;
+        align-items: end;
+    }
+    .invoice-form .invoice-section-meta .invoice-meta-row-main.has-due-date {
+        grid-template-columns:
+            minmax(10rem, 12.25rem)
+            minmax(7.75rem, 9.5rem)
+            minmax(7rem, 8.75rem)
+            minmax(7.5rem, 1fr)
+            minmax(8rem, 10.25rem)
+            minmax(7.75rem, 9.5rem)
+            auto;
+    }
+    .invoice-form .invoice-section-meta .invoice-meta-row-main > [class*="col-"] {
+        width: auto;
+        max-width: none;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .invoice-form .invoice-section-meta .invoice-meta-tax {
+        padding-bottom: 0.35rem;
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .invoice-form .invoice-section {
+        margin-bottom: 0.85rem;
+        border-radius: 8px;
+    }
+    .invoice-form .invoice-section-head {
+        padding: 0.5rem 0.7rem;
+    }
+    .invoice-form .invoice-section-body {
+        padding: 0.7rem;
+    }
+    .invoice-form .invoice-item-card,
+    .invoice-form .invoice-payment-card {
+        padding: 0.65rem 0.7rem;
+        margin-bottom: 0.65rem;
+    }
+    .invoice-form .form-label,
+    .invoice-form .form-label-sm {
+        font-size: 0.8rem;
+        margin-bottom: 0.2rem;
+    }
+    .invoice-form .invoice-totals-list .input-group {
+        width: 140px !important;
+        max-width: 45vw;
+    }
+}
+
+.sayad-scan-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.72);
+}
+.sayad-scan-overlay[hidden] {
+    display: none !important;
+}
+.sayad-scan-panel {
+    width: min(26rem, 100%);
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+}
+.sayad-scan-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+}
+.sayad-scan-stage {
+    position: relative;
+    background: #000;
+}
+.sayad-scan-video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    background: #000;
+}
+.sayad-scan-frame {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 58%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(255, 255, 255, 0.92);
+    border-radius: 10px;
+    box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+.sayad-scan-status {
+    padding: 0.75rem 0.9rem 0.9rem;
+    font-size: 0.85rem;
+    color: #475569;
+}
+
+.search-box {
+    /* No own bottom margin: inside align-items-center rows it pushed the box above its sibling filters.
+       Vertical spacing comes from the parent row's mb-*. */
+    margin-bottom: 0;
 }
 
 .accordion-button:not(.collapsed) {
     color: #0c63e4;
     background-color: #e7f1ff;
+}
+
+.accordion-button .collection-buttons {
+    visibility: hidden;
+}
+
+.accordion-button:hover .collection-buttons {
+    visibility: visible;
 }
 
 /* Status & Color Styles */
@@ -107,6 +629,20 @@ body {
     background-color: #d1e7dd !important;
     color: #0f5132;
     font-weight: bold;
+}
+
+.purchase-order-warehouse-row {
+    background-color: #eef6ff !important;
+}
+
+.purchase-order-warehouse-row:hover {
+    background-color: #ddeeff !important;
+}
+
+.invoice-order-warehouse-badge {
+    font-size: 0.7rem;
+    vertical-align: middle;
+    white-space: nowrap;
 }
 
 .report-card {
@@ -148,7 +684,6 @@ body {
     width: 1em;
 }
 
-
 /* Pagination Styles */
 nav[aria-label$="Pagination"] {
     margin-top: 1rem;
@@ -158,27 +693,741 @@ nav[aria-label$="Pagination"] {
     cursor: pointer;
 }
 
-/* Report Table Header Alignment */
-#report-results-container table th {
-    text-align: right;
-}
-
+/* Report & Print Styles */
+#report-results-container table th,
 #account-transactions-table thead th,
 #account-statement-table thead th {
     text-align: right !important;
 }
 
-/* Transaction Row Coloring */
-.table-success-light > td, .table-success-light > th {
+/* گردش حساب بانک‌ها: جلوگیری از شکستن مبالغ و ردیف‌های بلندِ نامتعارف */
+#accounts .table-responsive {
+    overflow-x: auto;
+}
+#account-transactions-table {
+    width: 100% !important;
+    table-layout: auto;
+}
+#account-transactions-table td,
+#account-transactions-table th {
+    text-align: right !important;
+    vertical-align: middle;
+}
+/* DataTables گاهی برای اعداد text-align را عوض می‌کند */
+table.dataTable#account-transactions-table > thead > tr > th,
+table.dataTable#account-transactions-table > tbody > tr > td {
+    text-align: right !important;
+}
+#account-transactions-table td.text-nowrap,
+#account-transactions-table th.text-nowrap {
+    white-space: nowrap !important;
+}
+#account-transactions-table td.account-tx-desc {
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    min-width: 12rem;
+}
+#accounts .dataTables_wrapper {
+    width: 100%;
+}
+#accounts .dataTables_wrapper .dataTables_scroll {
+    clear: both;
+}
+
+.table-success-light>td,
+.table-success-light>th {
     background-color: #d1e7dd !important;
 }
 
-.table-danger-light > td, .table-danger-light > th {
+.table-danger-light>td,
+.table-danger-light>th {
     background-color: #f8d7da !important;
 }
 
-/* Style for nested modals */
 .modal-underlay {
-    filter: blur(2px) brightness(0.9);
-    transition: filter 0.2s ease-in-out;
+    /* نباید کل دیالوگ قبلی محو شود؛ همان بک‌دراپ کافی است. */
+    opacity: 1;
+    pointer-events: none;
+    transition: none;
 }
+
+body.modal-open #mainTabContent > .tab-pane.fade,
+body.modal-open .modal .tab-pane.fade {
+    transition: none !important;
+    opacity: 1 !important;
+}
+
+.modal .tab-content > .tab-pane.fade {
+    transition: none !important;
+}
+.modal .tab-content > .tab-pane:not(.active) {
+    display: none !important;
+}
+
+.modal-backdrop + .modal-backdrop {
+    display: none !important;
+}
+
+#confirmationModal {
+    z-index: 1080;
+}
+
+/* --- NEW STYLES FOR BATCH LABEL PRINTING --- */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    .label-print-container,
+    .label-print-container * {
+        visibility: visible;
+    }
+
+    .label-print-container {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+    }
+}
+
+.label-print-container {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 10mm;
+    width: 210mm;
+    /* A4 width */
+    min-height: 297mm;
+    /* A4 height */
+    box-sizing: border-box;
+}
+
+.label-print-item {
+    border: 1px solid #ccc;
+    padding: 10px;
+    font-size: 11px;
+    display: flex;
+    flex-direction: column;
+    page-break-inside: avoid;
+    height: 90mm;
+    /* Adjust based on your label size */
+    box-sizing: border-box;
+}
+
+.label-header {
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+    margin-bottom: 5px;
+}
+
+.label-body {
+    display: flex;
+    flex-grow: 1;
+}
+
+.label-details {
+    flex-basis: 65%;
+    display: flex;
+    flex-direction: column;
+}
+
+.label-spec {
+    margin-bottom: 3px;
+}
+
+.label-qr-code {
+    flex-basis: 35%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.label-footer {
+    border-top: 1px solid #eee;
+    padding-top: 5px;
+    margin-top: auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.label-price {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.label-sku {
+    font-size: 9px;
+    font-family: monospace;
+}
+
+.label-id {
+    font-size: 10px;
+}
+
+/* Invoice Details Row Styles */
+.invoice-details-row {
+    background-color: #f8f9fa !important;
+}
+
+.invoice-details-row > td {
+    padding: 0 !important;
+    border-top: none !important;
+}
+
+.invoice-details-row .table {
+    margin: 0;
+    font-size: 0.85em;
+}
+
+.invoice-details-row .table th {
+    background-color: #e9ecef;
+    font-weight: 600;
+    padding: 0.4rem 0.5rem;
+}
+
+.invoice-details-row .table td {
+    padding: 0.3rem 0.5rem;
+    vertical-align: middle;
+}
+
+/* Toggle switch styling for invoice details */
+.form-check-input:checked {
+    background-color: #198754;
+    border-color: #198754;
+}
+
+/* =================================================================
+ * PWA / Mobile UX enhancements
+ * ================================================================= */
+
+/* Prevent accidental horizontal scrolling on small screens.
+ * scrollbar-gutter: stable — keeps layout width fixed when vertical
+ * scrollbar appears/disappears (avoids horizontal jump between tabs). */
+html {
+    max-width: 100%;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+}
+body {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+/* Fullscreen invoice/quotation/return modals: keep header/footer fixed, body scrollable */
+.modal-fullscreen .modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-height: 100vh;
+    max-height: 100dvh;
+}
+.modal-fullscreen .modal-header,
+.modal-fullscreen .modal-footer {
+    flex-shrink: 0;
+}
+.modal-fullscreen .modal-body {
+    flex: 1 1 auto;
+    min-height: 0; /* allow flex child to scroll */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.modal-fullscreen.modal-dialog-scrollable .modal-content {
+    max-height: 100%;
+}
+.modal-fullscreen.modal-dialog-scrollable .modal-body {
+    overflow-y: auto;
+}
+
+/* Safe-area support for notch / home-indicator devices (standalone PWA) */
+@supports (padding: max(0px)) {
+    body {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+    .main-container {
+        padding-bottom: max(20px, env(safe-area-inset-bottom));
+    }
+    header.d-flex {
+        padding-top: max(1rem, env(safe-area-inset-top)) !important;
+    }
+    .modal-fullscreen .modal-body {
+        padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+    .modal-fullscreen .modal-footer {
+        padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    }
+}
+
+/* Smoother, tap-friendly interactions on touch devices */
+@media (pointer: coarse) {
+    a, button, .btn, .nav-link, .dropdown-item,
+    [role="button"], [data-bs-toggle], summary {
+        touch-action: manipulation;
+    }
+}
+
+/* ----------------------------------------------------------------- *
+ *  TABLET & BELOW (<= 991px): main navigation becomes a scroll strip
+ * ----------------------------------------------------------------- */
+@media (max-width: 991px) {
+    #mainTab,
+    #settings-sub-tab,
+    #audit-tabs,
+    #product-modal-tabs,
+    #analytics-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+    }
+    #mainTab {
+        border-bottom: 1px solid #dee2e6;
+        margin-bottom: 0.25rem;
+    }
+    #mainTab::-webkit-scrollbar,
+    #settings-sub-tab::-webkit-scrollbar,
+    #audit-tabs::-webkit-scrollbar,
+    #product-modal-tabs::-webkit-scrollbar,
+    #analytics-tabs::-webkit-scrollbar { display: none; }
+    #mainTab .nav-item,
+    #settings-sub-tab .nav-item,
+    #audit-tabs .nav-item,
+    #product-modal-tabs .nav-item,
+    #analytics-tabs .nav-item { flex: 0 0 auto; }
+    #mainTab .nav-link,
+    #settings-sub-tab .nav-link,
+    #audit-tabs .nav-link,
+    #product-modal-tabs .nav-link,
+    #analytics-tabs .nav-link { white-space: nowrap; }
+    #mainTab .nav-link {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+    /* Keep horizontal scroll strip; no dropdown overflow hacks needed on mobile
+       because persons are direct tabs below md breakpoint. */
+    #mainTab .dropdown-menu {
+        z-index: 1080;
+    }
+}
+
+/* ----------------------------------------------------------------- *
+ *  PHONE & SMALL TABLET (<= 768px): comprehensive layout fixes
+ * ----------------------------------------------------------------- */
+@media (max-width: 768px) {
+    /* --- Tap targets & inputs --- */
+    .btn,
+    .nav-link,
+    .dropdown-item,
+    .page-link,
+    a.btn,
+    button {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .btn-sm,
+    .btn-group-sm > .btn {
+        min-height: 40px;
+    }
+    .dropdown-item {
+        justify-content: flex-start;
+        padding-top: 0.55rem;
+        padding-bottom: 0.55rem;
+    }
+    /* 16px minimum on form fields prevents iOS Safari from zooming in */
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea,
+    .form-control,
+    .form-select,
+    .form-control-sm,
+    .form-select-sm {
+        font-size: 16px !important;
+    }
+
+    /* --- Headings sizing --- */
+    #app-title-header { font-size: 1.05rem; }
+    #user-info { font-size: 0.8rem; }
+    .tab-pane > .d-flex > h4,
+    .tab-pane h4 { font-size: 1.15rem; }
+
+    /* --- Section header rows: stack title above full-width actions --- */
+    .tab-pane > .d-flex.justify-content-between {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 0.5rem;
+    }
+    /* Inner action wrappers/groups wrap instead of overflowing */
+    .tab-pane > .d-flex.justify-content-between .d-flex {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .tab-pane > .d-flex.justify-content-between .btn-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        width: 100%;
+    }
+    .tab-pane > .d-flex.justify-content-between .btn-group > .btn {
+        flex: 1 1 auto;
+        border-radius: 0.375rem !important;
+    }
+
+    /* --- Filter / search rows: comfortable spacing when stacked --- */
+    .tab-pane .row.align-items-center > [class*="col-"] { margin-bottom: 0.5rem; }
+    .tab-pane .row.align-items-center > [class*="col-"]:last-child { margin-bottom: 0; }
+
+    /* Fixed-width inline input groups should not overflow */
+    .input-group[style*="width"] { width: 100% !important; max-width: 100%; }
+
+    /* --- Tables: denser text; nowrap only inside a scroll container --- */
+    .table-responsive {
+        -webkit-overflow-scrolling: touch;
+        border-radius: 0.375rem;
+        max-width: 100%;
+    }
+    table.table {
+        font-size: 0.85rem;
+    }
+    /* Avoid page-wide horizontal scroll: bare tables may wrap; scrollable ones stay nowrap */
+    .table-responsive table.table th,
+    .table-responsive table.table td,
+    .dataTables_wrapper table.table th,
+    .dataTables_wrapper table.table td,
+    .report-table-scroll table.table th,
+    .report-table-scroll table.table td {
+        white-space: nowrap;
+    }
+    /* Action-cell buttons stay grouped & tappable */
+    table.table td .btn {
+        padding: 0.25rem 0.5rem;
+    }
+
+    /* --- Reports: contain overflow + stack controls --- */
+    #reports {
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    #report-results-container {
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    #report-results-container .table-responsive,
+    #report-results-container .report-table-scroll,
+    #report-results-container .dataTables_wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+    }
+    #report-results-container .dataTables_scrollBody {
+        -webkit-overflow-scrolling: touch;
+    }
+    /* Allow long descriptions to wrap instead of forcing a huge table */
+    #report-results-container table.table td:nth-child(2),
+    #person-statement-table td:nth-child(2),
+    #account-statement-table td:nth-child(2) {
+        white-space: normal !important;
+        word-break: break-word;
+        min-width: 7rem;
+        max-width: 14rem;
+    }
+    #reports .btn-group.w-100 {
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+    #reports .btn-group.w-100 > .btn {
+        width: 100%;
+        border-radius: 0.375rem !important;
+    }
+    #profit-calc-method-wrapper {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+    #profit-calc-method-wrapper .form-label {
+        margin-inline-end: 0 !important;
+        margin-bottom: 0.35rem;
+    }
+    #profit-calc-method-wrapper .btn-group {
+        flex-wrap: wrap;
+        width: 100%;
+        gap: 0.35rem;
+    }
+    #profit-calc-method-wrapper .btn-group > .btn,
+    #profit-calc-method-wrapper .btn-group > label.btn {
+        flex: 1 1 auto;
+        border-radius: 0.375rem !important;
+        white-space: normal;
+        height: auto;
+        min-height: 40px;
+    }
+    #person-statement-options .row,
+    #checks-report-options .row,
+    #custom-report-options .row {
+        --bs-gutter-y: 0.75rem;
+    }
+    #person-statement-options .col-auto,
+    #checks-report-options .col-auto,
+    #person-statement-options [class*="col-md-"],
+    #checks-report-options [class*="col-md-"] {
+        width: 100%;
+        max-width: 100%;
+        flex: 0 0 100%;
+    }
+    #report-results-container .row.text-center > .col {
+        flex: 0 0 50%;
+        max-width: 50%;
+        margin-bottom: 0.75rem;
+    }
+    /* Invoice sales/purchase report — mobile-friendly accordion */
+    .invoice-report-acc-btn {
+        height: auto !important;
+        min-height: 44px;
+        align-items: flex-start !important;
+        text-align: right;
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
+    }
+    .invoice-report-acc-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        min-width: 0;
+    }
+    .invoice-report-acc-title {
+        font-size: 0.92rem;
+        line-height: 1.45;
+        white-space: normal;
+        word-break: break-word;
+    }
+    .invoice-report-acc-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+    .invoice-report-acc-badges .badge {
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    .invoice-report .table-responsive {
+        max-width: 100%;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Custom report column picker */
+    .custom-report-columns-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+        gap: 0.35rem 0.65rem;
+        max-height: 220px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .custom-report-columns-grid .form-check {
+        margin: 0;
+        min-height: 2rem;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.2rem 0.15rem;
+    }
+    .custom-report-columns-grid .form-check-label {
+        font-size: 0.9rem;
+        line-height: 1.3;
+        word-break: break-word;
+    }
+
+    /* --- Cards --- */
+    .card { margin-bottom: 1rem; }
+
+    /* --- Modals --- */
+    .modal-dialog:not(.modal-fullscreen):not(.modal-sm) {
+        margin: 0.5rem;
+    }
+    .modal-footer {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .modal-footer > .btn {
+        flex: 1 1 auto;
+        margin: 0;
+    }
+    .modal-body { padding: 0.85rem; }
+
+    /* --- Select2 / dropdowns must not exceed viewport --- */
+    .select2-container { max-width: 100% !important; }
+    .dropdown-menu { max-width: calc(100vw - 1.5rem); }
+}
+
+/* ----------------------------------------------------------------- *
+ *  Header toolbar wrapping (all small screens)
+ * ----------------------------------------------------------------- */
+@media (max-width: 991px) {
+    header.d-flex {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    header.d-flex > div { min-width: 0; }
+    header .d-flex.align-items-center {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.35rem;
+    }
+    header .dropdown.me-3 { margin-inline-end: 0 !important; }
+}
+
+/* ----------------------------------------------------------------- *
+ *  Extra-small phones (<= 420px): tighten further
+ * ----------------------------------------------------------------- */
+@media (max-width: 420px) {
+    .container-fluid.main-container { padding-left: 0.5rem; padding-right: 0.5rem; }
+    .card-body { padding: 0.85rem; }
+    #mainTab .nav-link { padding: 0.5rem 0.7rem; font-size: 0.9rem; }
+    .modal-header, .modal-footer { padding: 0.75rem; }
+    .btn-group.dashboard-quick > .btn { font-size: 0.85rem; }
+}
+
+/* Price list: per-item price editor */
+#price-list-container .price-edit-btn {
+    line-height: 1;
+    font-size: 0.75rem;
+}
+#price-list-container .price-per-meter-cell {
+    min-width: 140px;
+}
+
+/* Reports (all viewports): keep wide tables inside a horizontal scroll strip */
+#reports,
+#report-results-container {
+    min-width: 0;
+    max-width: 100%;
+}
+#report-results-container .table-responsive,
+#report-results-container .report-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+}
+
+/* Global search (Ctrl+K) */
+#quickNavModal .modal-dialog {
+    max-width: 640px;
+}
+#quickNavModal .gs-results {
+    max-height: min(60vh, 440px);
+    overflow-y: auto;
+}
+#quickNavModal .gs-group-title {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bs-body-bg, #fff);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6c757d;
+    padding: 0.4rem 0.85rem 0.2rem;
+}
+#quickNavModal .gs-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    border: 0;
+    padding: 0.55rem 0.85rem;
+}
+#quickNavModal .gs-item .gs-item-main {
+    font-size: 0.92rem;
+}
+#quickNavModal .gs-item .gs-item-sub,
+#quickNavModal .gs-item .gs-item-hint {
+    font-size: 0.78rem;
+    color: #6c757d;
+}
+#quickNavModal .gs-item.active,
+#quickNavModal .gs-item:hover {
+    background-color: rgba(13, 110, 253, 0.12);
+}
+#quickNavModal kbd {
+    font-size: 0.7rem;
+}
+[data-theme="dark"] #quickNavModal .gs-group-title {
+    background: #16213e;
+    color: #adb5bd;
+}
+[data-theme="dark"] #quickNavModal .gs-item.active,
+[data-theme="dark"] #quickNavModal .gs-item:hover {
+    background-color: #0f3460;
+}
+/* ===== CRM ===== */
+.crm-subnav, .crm-stage-pills { overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+.crm-subnav::-webkit-scrollbar, .crm-stage-pills::-webkit-scrollbar { display: none; }
+.crm-subnav .nav-link, .crm-stage-pills .nav-link { white-space: nowrap; }
+.crm-card { border-radius: 12px; }
+.min-w-0 { min-width: 0; }
+.crm-sheet.offcanvas-bottom { height: 92vh; border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.crm-sheet-short.offcanvas-bottom { height: auto; max-height: 92vh; }
+@media (min-width: 768px) {
+    .crm-sheet.offcanvas-bottom { max-width: 760px; margin: 0 auto; }
+}
+@media (max-width: 575.98px) {
+    .crm-actions .btn { flex: 1 1 calc(50% - .5rem); }
+}
+.crm-tl-item:last-child { border-bottom: 0 !important; }
+#crm-log-sheet .btn.rounded-pill { padding: .35rem .8rem; }
+/* ===== میز کار (projects, board, meetings) ===== */
+.work-lane { background: var(--bs-tertiary-bg); min-height: 120px; transition: background .15s; }
+.work-lane-over { background: var(--bs-primary-bg-subtle); }
+.work-task[draggable="true"] { cursor: grab; }
+.work-flash { animation: work-flash 2s ease-out; }
+@keyframes work-flash { 0% { box-shadow: 0 0 0 .25rem rgba(13, 110, 253, .45); } 100% { box-shadow: none; } }
+.work-thumb { width: 72px; height: 72px; object-fit: cover; }
+.border-dashed { border-style: dashed !important; }
+#work-project-body .progress, #work-project-sub .progress { min-width: 80px; }
+[data-theme="dark"] .work-lane { background: #1f2a48; }
+[data-theme="dark"] .work-lane-over { background: #27355c; }/* ===== میز کار — پیام‌رسان ===== */
+.chat-shell { height: calc(100vh - 220px); min-height: 420px; overflow: hidden; background: var(--bs-body-bg); }
+.chat-list-col { display: flex; flex-direction: column; height: 100%; }
+.chat-list { overflow-y: auto; flex: 1 1 auto; }
+.chat-view-col { height: 100%; min-height: 0; }
+.chat-item:hover, .chat-item.active { background: var(--bs-tertiary-bg); }
+.chat-avatar { width: 40px; height: 40px; border-radius: 50%; flex: 0 0 40px; display: flex; align-items: center; justify-content: center;
+    background: var(--bs-primary-bg-subtle); color: var(--bs-primary-text-emphasis); font-weight: 600; }
+.chat-avatar.group { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); }
+.chat-messages { min-height: 0; background: var(--bs-tertiary-bg); }
+.chat-row { display: flex; margin-bottom: .35rem; }
+.chat-row.mine { justify-content: flex-start; }
+.chat-row:not(.mine) { justify-content: flex-end; }
+.chat-bubble { max-width: min(78%, 520px); padding: .4rem .6rem; border-radius: 14px; background: var(--bs-body-bg); box-shadow: 0 1px 1px rgba(0, 0, 0, .06); overflow-wrap: anywhere; }
+.chat-row.mine .chat-bubble { background: #d9f2ff; border-top-right-radius: 4px; }
+.chat-row:not(.mine) .chat-bubble { border-top-left-radius: 4px; }
+.chat-bubble.deleted { font-style: italic; color: var(--bs-secondary-color); }
+.chat-text { white-space: pre-wrap; }
+.chat-meta .dropdown-menu { min-width: 14rem; }
+.chat-quote { background: rgba(13, 110, 253, .08); border-right: 3px solid var(--bs-primary); }
+.chat-ref { background: rgba(0, 0, 0, .04); color: inherit; text-decoration: none; }
+.chat-img { max-width: 260px; max-height: 260px; object-fit: cover; cursor: zoom-in; }
+.chat-video { max-width: 280px; }
+.chat-audio { width: 240px; max-width: 100%; height: 36px; }
+.chat-input { resize: none; max-height: 140px; }
+.chat-sheet.offcanvas-bottom { height: 100vh; height: 100dvh; border-radius: 0; }
+.chat-sheet .chat-messages { flex: 1 1 auto; }
+.chat-composer { background: var(--bs-body-bg); padding-bottom: calc(.5rem + env(safe-area-inset-bottom)) !important; }
+@media (max-width: 767.98px) {
+    .chat-shell { height: auto; min-height: 0; border: 0 !important; }
+    .chat-list-col { border: 0 !important; }
+}
+[data-theme="dark"] .chat-row.mine .chat-bubble { background: #1d3b5c; }
+[data-theme="dark"] .chat-row:not(.mine) .chat-bubble { background: #253150; }
+[data-theme="dark"] .chat-messages { background: #141c33; }
+[data-theme="dark"] .chat-ref { background: rgba(255, 255, 255, .06); }
+[data-theme="dark"] .chat-quote { background: rgba(110, 168, 254, .12); }

@@ -1,330 +1,40 @@
 <?php
-// /setup.php (نسخه هوشمند برای نصب و بروزرسانی)
+// /setup.php (نسخه هوشمند برای نصب و بروزرسانی + مهاجرت داده)
 session_start();
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 $step = $_GET['step'] ?? 1;
 $config_file_path = __DIR__ . '/api/config.php';
+$lock_file_path = __DIR__ . '/.installed';
 $error_message = '';
 $success_messages = [];
+
+// Block fresh install UI when app is already installed (upgrade via ?upgrade=1)
+if (file_exists($lock_file_path) && file_exists($config_file_path) && !isset($_GET['upgrade'])) {
+    if ($step == 1 || $step == 2) {
+        header('Location: index.php');
+        exit;
+    }
+}
+
+// Upgrade mode rewrites the live schema — only an authenticated user may run it.
+if (file_exists($lock_file_path) && file_exists($config_file_path) && isset($_GET['upgrade'])) {
+    if (empty($_SESSION['user_id'])) {
+        http_response_code(403);
+        echo '<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><body style="font-family:sans-serif;text-align:center;padding-top:3rem;">';
+        echo 'اجرای حالت بروزرسانی نیازمند ورود با حساب مدیر است. <a href="index.php">ورود به برنامه</a>';
+        echo '</body></html>';
+        exit;
+    }
+}
 
 if (file_exists($config_file_path) && $step != 3) {
     $step = 3; 
 }
 
-/**
- * تعریف کامل و صحیح ساختار دیتابیس برای آخرین نسخه برنامه
- * @return array
- */
-function get_full_schema() {
-    return [
-        'business_entities' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
-            ],
-            'constraints' => ['PRIMARY KEY (`id`)']
-        ],
-        'settings' => [
-            'columns' => [
-                '`setting_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`setting_value` text COLLATE utf8mb4_unicode_ci NOT NULL',
-            ],
-            'constraints' => ['PRIMARY KEY (`setting_key`)']
-        ],
-        'users' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`username` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`password_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`failed_login_attempts` int(11) NOT NULL DEFAULT 0',
-                '`lockout_until` datetime DEFAULT NULL',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'UNIQUE KEY `username` (`username`)',
-            ]
-        ],
-        'activity_log' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`user_id` int(11) DEFAULT NULL',
-                '`timestamp` timestamp NOT NULL DEFAULT current_timestamp()',
-                '`username` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`action_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`description` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-            ],
-            'constraints' => ['PRIMARY KEY (`id`)']
-        ],
-        'customers' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`address` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`nationalId` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`initial_balance` decimal(15,2) DEFAULT 0.00',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => ['PRIMARY KEY (`id`)']
-        ],
-        'suppliers' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`address` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`economicCode` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`initial_balance` decimal(15,2) DEFAULT 0.00',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => ['PRIMARY KEY (`id`)']
-        ],
-        'products' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`description` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`type` enum(\'machine\',\'handmade\') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT \'machine\'',
-                '`material` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`collection` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`design_code` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`colorway` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`shaneh` int(11) DEFAULT NULL',
-                '`density` int(11) DEFAULT NULL',
-                '`pile_height_mm` decimal(5,2) DEFAULT NULL',
-                '`origin` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`raj` int(11) DEFAULT NULL',
-                '`length_cm` int(11) DEFAULT NULL',
-                '`width_cm` int(11) DEFAULT NULL',
-                '`parent_product_id` int(11) DEFAULT NULL',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'KEY `parent_product_id` (`parent_product_id`)'
-            ]
-        ],
-        'partners' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`share` decimal(5,4) NOT NULL',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => ['PRIMARY KEY (`id`)']
-        ],
-        'accounts' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`bank_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`account_number` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`card_number` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`current_balance` decimal(15,2) NOT NULL DEFAULT 0.00',
-                '`is_cash` tinyint(1) NOT NULL DEFAULT 0',
-                '`partner_id` int(11) DEFAULT NULL',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'KEY `partner_id` (`partner_id`)',
-                'CONSTRAINT `fk_account_partner` FOREIGN KEY (`partner_id`) REFERENCES `partners` (`id`) ON DELETE SET NULL ON UPDATE CASCADE',
-            ]
-        ],
-        'product_stock' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`product_id` int(11) NOT NULL',
-                '`dimensions` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`quantity` int(11) NOT NULL DEFAULT 0',
-                '`warehouse_id` int(11) DEFAULT NULL',
-                '`bin_location` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'UNIQUE KEY `uk_product_dimension_warehouse` (`product_id`,`dimensions`,`warehouse_id`)',
-                'CONSTRAINT `product_stock_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE',
-            ]
-        ],
-        'sales_invoices' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`customerId` int(11) NOT NULL',
-                '`date` date NOT NULL',
-                '`totalAmount` decimal(15,2) NOT NULL',
-                '`discount` decimal(15,2) DEFAULT 0.00',
-                '`paidAmount` decimal(15,2) DEFAULT 0.00',
-                '`description` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`is_consignment` tinyint(1) DEFAULT 0',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'KEY `customerId` (`customerId`)',
-                'KEY `date` (`date`)',
-                'CONSTRAINT `sales_invoices_ibfk_1` FOREIGN KEY (`customerId`) REFERENCES `customers` (`id`) ON DELETE RESTRICT',
-            ]
-        ],
-        'purchase_invoices' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`supplierId` int(11) NOT NULL',
-                '`date` date NOT NULL',
-                '`totalAmount` decimal(15,2) NOT NULL',
-                '`discount` decimal(15,2) DEFAULT 0.00',
-                '`paidAmount` decimal(15,2) DEFAULT 0.00',
-                '`description` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`is_consignment` tinyint(1) DEFAULT 0',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'KEY `supplierId` (`supplierId`)',
-                'KEY `date` (`date`)',
-                'CONSTRAINT `purchase_invoices_ibfk_1` FOREIGN KEY (`supplierId`) REFERENCES `suppliers` (`id`) ON DELETE RESTRICT',
-            ]
-        ],
-        'sales_invoice_items' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`invoiceId` int(11) NOT NULL',
-                '`productId` int(11) NOT NULL',
-                '`quantity` int(11) NOT NULL',
-                '`unitPrice` decimal(15,2) NOT NULL',
-                '`dimensions` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'UNIQUE KEY `uk_invoice_product_dims` (`invoiceId`,`productId`,`dimensions`)',
-                'KEY `invoiceId` (`invoiceId`)',
-                'CONSTRAINT `sales_invoice_items_ibfk_1` FOREIGN KEY (`invoiceId`) REFERENCES `sales_invoices` (`id`) ON DELETE CASCADE',
-            ]
-        ],
-        'purchase_invoice_items' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`invoiceId` int(11) NOT NULL',
-                '`productId` int(11) NOT NULL',
-                '`quantity` int(11) NOT NULL',
-                '`unitPrice` decimal(15,2) NOT NULL',
-                '`dimensions` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'UNIQUE KEY `uk_invoice_product_dims` (`invoiceId`,`productId`,`dimensions`)',
-                'KEY `invoiceId` (`invoiceId`)',
-                'CONSTRAINT `purchase_invoice_items_ibfk_1` FOREIGN KEY (`invoiceId`) REFERENCES `purchase_invoices` (`id`) ON DELETE CASCADE',
-            ]
-        ],
-        'checks' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`type` enum(\'received\',\'payable\') COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`status` enum(\'in_hand\',\'endorsed\',\'cashed\',\'payable\',\'bounced\') COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`invoiceId` int(11) DEFAULT NULL',
-                '`invoiceType` enum(\'sales\',\'purchase\') COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`checkNumber` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`dueDate` date NOT NULL',
-                '`bankName` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`amount` decimal(15,2) NOT NULL',
-                '`endorsedToInvoiceId` int(11) DEFAULT NULL',
-                '`cashed_in_account_id` int(11) DEFAULT NULL',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'KEY `cashed_in_account_id` (`cashed_in_account_id`)',
-                'KEY `dueDate` (`dueDate`)',
-                'KEY `status` (`status`)',
-                'CONSTRAINT `checks_ibfk_1` FOREIGN KEY (`cashed_in_account_id`) REFERENCES `accounts` (`id`) ON DELETE SET NULL',
-            ]
-        ],
-        'payments' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`invoiceId` int(11) DEFAULT NULL',
-                '`invoiceType` enum(\'sales\',\'purchase\') COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`person_id` int(11) DEFAULT NULL',
-                '`person_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`transaction_type` enum(\'receipt\',\'payment\') COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`type` enum(\'cash\',\'check\',\'endorse_check\') COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`amount` decimal(15,2) NOT NULL',
-                '`date` date NOT NULL',
-                '`description` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`checkId` int(11) DEFAULT NULL',
-                '`account_id` int(11) DEFAULT NULL',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'KEY `checkId` (`checkId`)',
-                'KEY `account_id` (`account_id`)',
-                'KEY `person_key` (`person_id`,`person_type`)',
-                'KEY `date` (`date`)',
-                'CONSTRAINT `payments_ibfk_1` FOREIGN KEY (`checkId`) REFERENCES `checks` (`id`) ON DELETE SET NULL',
-                'CONSTRAINT `payments_ibfk_2` FOREIGN KEY (`account_id`) REFERENCES `accounts` (`id`) ON DELETE SET NULL',
-            ]
-        ],
-        'expenses' => [
-            'columns' => [
-                '`id` int(11) NOT NULL AUTO_INCREMENT',
-                '`category` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL',
-                '`date` date NOT NULL',
-                '`amount` decimal(15,2) NOT NULL',
-                '`description` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
-                '`account_id` int(11) NOT NULL',
-                '`entity_id` int(11) NOT NULL DEFAULT 1',
-            ],
-            'constraints' => [
-                'PRIMARY KEY (`id`)',
-                'KEY `account_id` (`account_id`)',
-                'KEY `date` (`date`)',
-                'CONSTRAINT `expenses_ibfk_1` FOREIGN KEY (`account_id`) REFERENCES `accounts` (`id`) ON DELETE RESTRICT',
-            ]
-        ],
-    ];
-}
+require_once __DIR__ . '/api/core/schema.php';
 
-/**
- * ساختار دیتابیس را با اسکما مقایسه و بروزرسانی می‌کند
- */
-function synchronize_schema($pdo, $db_name, &$success_messages, &$error_message) {
-    $schema = get_full_schema();
-
-    foreach ($schema as $tableName => $tableDef) {
-        try {
-            $stmt_check = $pdo->prepare("SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?");
-            $stmt_check->execute([$db_name, $tableName]);
-            $tableExists = $stmt_check->fetchColumn();
-
-            if (!$tableExists) {
-                $columnsAndConstraints = array_merge($tableDef['columns'], $tableDef['constraints']);
-                $createQuery = "CREATE TABLE `{$tableName}` (" . implode(', ', $columnsAndConstraints) . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
-                $pdo->exec($createQuery);
-                $success_messages[] = "جدول `{$tableName}` با موفقیت ایجاد شد.";
-            } else {
-                // Check for missing columns
-                $stmt = $pdo->prepare("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?");
-                $stmt->execute([$db_name, $tableName]);
-                $existingColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-                foreach ($tableDef['columns'] as $columnDef) {
-                    preg_match('/`([^`]+)`/', $columnDef, $matches);
-                    $columnName = $matches[1];
-                    
-                    if (!in_array($columnName, $existingColumns)) {
-                        $pdo->exec("ALTER TABLE `{$tableName}` ADD COLUMN {$columnDef}");
-                        $success_messages[] = "ستون `{$columnName}` به جدول `{$tableName}` اضافه شد.";
-                    }
-                }
-            }
-        } catch (PDOException $e) {
-            $error_message .= "خطا در پردازش جدول `{$tableName}`: " . $e->getMessage() . "<br>";
-        }
-    }
-}
 
 
 if (($_SERVER['REQUEST_METHOD'] === 'POST' && $step == 2) || (file_exists($config_file_path) && $step == 3)) {
@@ -338,14 +48,31 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && $step == 2) || (file_exists($confi
         if (empty($db_name) || empty($db_user)) {
             $error_message = 'نام دیتابیس و نام کاربری الزامی است.';
         } else {
-            $config_content = "<?php\n// /api/config.php - Generated by setup script\n\n";
-            $config_content .= "define('DB_SERVER', '{$db_host}');\n";
-            $config_content .= "define('DB_NAME', '{$db_name}');\n";
-            $config_content .= "define('DB_USERNAME', '{$db_user}');\n";
-            $config_content .= "define('DB_PASSWORD', '{$db_pass}');\n";
+            // Validate DB name and user to avoid injection into SQL/filenames
+            if (!preg_match('/^[A-Za-z0-9_]+$/', $db_name)) {
+                $error_message = 'نام دیتابیس نامعتبر است. فقط حروف، اعداد و "_" مجاز است.';
+            }
+            if (!preg_match('/^[A-Za-z0-9_]+$/', $db_user)) {
+                $error_message = 'نام کاربری دیتابیس نامعتبر است. فقط حروف، اعداد و "_" مجاز است.';
+            }
 
-            if (file_put_contents($config_file_path, $config_content) === false) {
-                $error_message = 'خطا در ایجاد فایل `config.php`. لطفاً از قابل نوشتن بودن پوشه `api/` اطمینان حاصل کنید.';
+            if (empty($error_message)) {
+                // Use var_export to safely serialize values for PHP file
+                $config_content = "<?php\n// /api/config.php - Generated by setup script\n\n";
+                $config_content .= "define('DB_SERVER', " . var_export($db_host, true) . ");\n";
+                $config_content .= "define('DB_NAME', " . var_export($db_name, true) . ");\n";
+                $config_content .= "define('DB_USERNAME', " . var_export($db_user, true) . ");\n";
+                $config_content .= "define('DB_PASSWORD', " . var_export($db_pass, true) . ");\n\n";
+                // Dates (invoice dates, due checks, backups, cron windows) are all
+                // computed in PHP; without an explicit zone the server default (often UTC) applies.
+                $config_content .= "date_default_timezone_set('Asia/Tehran');\n";
+
+                if (file_put_contents($config_file_path, $config_content) === false) {
+                    $error_message = 'خطا در ایجاد فایل `config.php`. لطفاً از قابل نوشتن بودن پوشه `api/` اطمینان حاصل کنید.';
+                } else {
+                    // Restrict file permissions when possible
+                    @chmod($config_file_path, 0640);
+                }
             }
         }
     } else {
@@ -365,36 +92,85 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && $step == 2) || (file_exists($confi
                 $success_messages[] = "دیتابیس `{$db_name}` با موفقیت ایجاد (یا از قبل موجود) بود.";
             }
             $pdo->exec("USE `{$db_name}`");
-
+            
+            // FIRST, synchronize the schema
             synchronize_schema($pdo, $db_name, $success_messages, $error_message);
+            
+            // SECOND, run migration if needed
+            if(empty($error_message)) {
+                migrate_stock_data($pdo, $db_name, $success_messages, $error_message);
+            }
+            if (empty($error_message)) {
+                repair_partner_share_history($pdo, $db_name, $success_messages);
+            }
             
             if (empty($error_message)) {
                 $success_messages[] = "ساختار تمام جداول با موفقیت بررسی و بروزرسانی شد.";
                 
-                // Check and insert default admin user
-                $stmt = $pdo->prepare("SELECT id FROM `users` WHERE username = 'admin'");
-                $stmt->execute();
-                if ($stmt->fetch() === false) {
-                    $admin_user = 'admin';
-                    $admin_pass = 'admin123';
+                // THIRD, seed default data like permissions
+                seed_default_data($pdo, $success_messages);
+                
+                // FOURTH, ensure admin user and roles are set up
+                $stmt_user = $pdo->prepare("SELECT id FROM `users` WHERE username = 'admin'");
+                $stmt_user->execute();
+                $admin_user_id = $stmt_user->fetchColumn();
+                if ($admin_user_id === false) {
+                    // Random one-time password — never ship a known default credential.
+                    $admin_pass = substr(str_shuffle('abcdefghjkmnpqrstuvwxyz'), 0, 4)
+                        . substr(str_shuffle('ABCDEFGHJKMNPQRSTUVWXYZ'), 0, 4)
+                        . substr(str_shuffle('23456789'), 0, 4);
+                    $admin_pass = str_shuffle($admin_pass);
                     $password_hash = password_hash($admin_pass, PASSWORD_DEFAULT);
-
-                    $stmt_insert = $pdo->prepare("INSERT INTO `users` (username, password_hash) VALUES (?, ?)");
-                    $stmt_insert->execute([$admin_user, $password_hash]);
-                    $success_messages[] = "کاربر پیش‌فرض `admin` با رمز `admin123` ایجاد شد.";
-                } else {
-                    $success_messages[] = "کاربر `admin` از قبل موجود است.";
+                    $stmt_insert_user = $pdo->prepare("INSERT INTO `users` (username, password_hash) VALUES ('admin', ?)");
+                    $stmt_insert_user->execute([$password_hash]);
+                    $admin_user_id = $pdo->lastInsertId();
+                    $success_messages[] = "کاربر پیش‌فرض `admin` با رمز تصادفی `{$admin_pass}` ایجاد شد. این رمز فقط همین یک‌بار نمایش داده می‌شود — آن را یادداشت کنید و بلافاصله پس از ورود تغییرش دهید.";
                 }
 
-                // Check and insert default business entity
-                $stmt = $pdo->prepare("SELECT id FROM `business_entities` WHERE id = 1");
-                $stmt->execute();
-                if ($stmt->fetch() === false) {
-                    $stmt_insert = $pdo->prepare("INSERT INTO `business_entities` (id, name) VALUES (1, 'مجموعه اصلی')");
-                    $stmt_insert->execute();
+                $stmt_role = $pdo->prepare("SELECT id FROM `roles` WHERE role_name = 'مدیر کل'");
+                $stmt_role->execute();
+                $admin_role_id = $stmt_role->fetchColumn();
+                if ($admin_role_id === false) {
+                    $stmt_insert_role = $pdo->prepare("INSERT INTO `roles` (role_name, description, is_system) VALUES ('مدیر کل', 'دسترسی کامل به تمام بخش‌های سیستم', 1)");
+                    $stmt_insert_role->execute();
+                    $admin_role_id = $pdo->lastInsertId();
+                    $success_messages[] = "نقش 'مدیر کل' ایجاد شد.";
+                } else {
+                    // Existing installs: mark the admin role as a system role (idempotent).
+                    $pdo->exec("UPDATE `roles` SET is_system = 1 WHERE role_name = 'مدیر کل'");
+                }
+
+                $stmt_permissions = $pdo->query("SELECT id FROM permissions");
+                $permission_ids = $stmt_permissions->fetchAll(PDO::FETCH_COLUMN);
+                $stmt_assign_perm = $pdo->prepare("INSERT IGNORE INTO `role_permissions` (role_id, permission_id) VALUES (?, ?)");
+                foreach ($permission_ids as $perm_id) {
+                    $stmt_assign_perm->execute([$admin_role_id, $perm_id]);
+                }
+                $success_messages[] = "تمام دسترسی‌ها به نقش 'مدیر کل' اختصاص داده شد (در صورت نیاز).";
+
+                $stmt_assign_role = $pdo->prepare("INSERT IGNORE INTO `user_roles` (user_id, role_id) VALUES (?, ?)");
+                $stmt_assign_role->execute([$admin_user_id, $admin_role_id]);
+                $success_messages[] = "نقش 'مدیر کل' به کاربر 'admin' اختصاص داده شد (در صورت نیاز).";
+                
+                // The default business entity is intentionally pinned to id=1:
+                // many table schemas declare `entity_id ... DEFAULT 1`, so the seed
+                // must match that schema invariant.
+                $default_entity_id = 1;
+                $stmt_entity = $pdo->prepare("SELECT id FROM `business_entities` WHERE id = ?");
+                $stmt_entity->execute([$default_entity_id]);
+                if ($stmt_entity->fetch() === false) {
+                    $stmt_insert = $pdo->prepare("INSERT INTO `business_entities` (id, name) VALUES (?, 'مجموعه اصلی')");
+                    $stmt_insert->execute([$default_entity_id]);
                     $success_messages[] = "مجموعه تجاری پیش‌فرض با موفقیت ایجاد شد.";
                 }
 
+                $stmt_grant_access = $pdo->prepare("INSERT IGNORE INTO user_entity_access (user_id, entity_id) VALUES (?, ?)");
+                $stmt_grant_access->execute([$admin_user_id, $default_entity_id]);
+                $success_messages[] = "دسترسی کاربر ادمین به مجموعه اصلی اعطا شد (در صورت نیاز).";
+
+                // Mark installation complete — remove .installed or use ?upgrade=1 to re-run schema updates
+                @file_put_contents($lock_file_path, date('c') . "\n");
+                $success_messages[] = "نصب با موفقیت تکمیل شد. برای امنیت، پس از اطمینان از عملکرد صحیح، فایل setup.php را حذف یا محدود کنید.";
             }
            
             if ($step == 2) {
@@ -416,8 +192,11 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && $step == 2) || (file_exists($confi
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#4f46e5">
     <title>نصب و راه‌اندازی سیستم حسابداری</title>
+    <link rel="icon" href="favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
     <link rel="stylesheet" href="assets/css/bootstrap.rtl.min.css">
     <link rel="stylesheet" href="assets/css/bootstrap-icons.css">
     <link rel="stylesheet" href="style.css">

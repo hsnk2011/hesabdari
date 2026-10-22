@@ -8,8 +8,10 @@ class EntityController {
         'accounts' => 'Account',
         'customers' => 'Customer',
         'suppliers' => 'Supplier',
+        'contacts' => 'Contact',
         'products' => 'Product',
         'expenses' => 'Expense',
+        'incomes' => 'Income',
         'users' => 'User',
         'activity_log' => 'ActivityLog',
         'checks' => 'Check',
@@ -18,6 +20,10 @@ class EntityController {
         'purchase_invoices' => 'Invoice',
         'consignment_sales' => 'Invoice',
         'consignment_purchases' => 'Invoice',
+        'return_invoices' => 'ReturnInvoice',
+        'sales_returns' => 'ReturnInvoice',
+        'purchase_returns' => 'ReturnInvoice',
+        'quotations' => 'Quotation',
     ];
 
     public function __construct($db) {
@@ -30,9 +36,6 @@ class EntityController {
             $modelFile = __DIR__ . '/../models/' . $modelName . '.php';
             if (file_exists($modelFile)) {
                 require_once $modelFile;
-                if ($modelName === 'Invoice' || $modelName === 'BaseModel') {
-                     require_once __DIR__ . '/../models/BaseModel.php';
-                }
                 return new $modelName($this->conn);
             }
         }
@@ -40,17 +43,21 @@ class EntityController {
     }
     
     public function getPaginatedData($data) {
-        $tableName = $data['tableName'] ?? '';
-        $model = $this->getModel($tableName);
+        try {
+            $tableName = $data['tableName'] ?? '';
+            $model = $this->getModel($tableName);
 
-        if ($model) {
-            $result = $model->getPaginated($data);
-            send_json($result);
-        } else {
-            send_json(['error' => 'Invalid table specified for pagination.'], 400);
+            if ($model) {
+                // The permission check is now handled centrally in the router (api/index.php)
+                $result = $model->getPaginated($data);
+                send_json($result);
+            } else {
+                send_json(['error' => 'جدول نامعتبر برای صفحه‌بندی مشخص شده است.'], 400);
+            }
+        } catch (Throwable $e) {
+            // Never answer with an empty list on failure: users read "no invoices"
+            // as real data. Log and report the error instead.
+            send_json(['error' => safe_exception_message($e, 'خطا در دریافت لیست. لطفاً دوباره تلاش کنید.')], 500);
         }
     }
-
-    // NOTE: save and delete methods for entities are now moved to their dedicated controllers.
-    // This controller is now only responsible for fetching paginated data.
 }

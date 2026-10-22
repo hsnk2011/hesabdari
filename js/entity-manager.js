@@ -2,12 +2,46 @@
 
 function createEntityManager(config) {
     const state = AppConfig.TABLE_STATES[config.tableName];
-    let activeOnSaveCallback = null; // FIX: Use a scoped variable for the callback to prevent it from getting lost.
 
-    async function load() {
+    async function load(filters = null, message = null) {
         UI.showLoader();
+
+        // START FIX: Handle incoming filters from smart alerts
+        const filterInfoContainer = $(`#${config.tableName}-filter-info`).empty();
         state.tableName = config.tableName;
-        const response = await Api.call('get_paginated_data', state);
+        let payload = { ...state };
+
+        if (filters) {
+            payload = { ...payload, ...filters };
+            state.filterType = filters.filterType; // Persist filter type in state
+            if (message) {
+                const clearButton = $('<button class="btn btn-sm btn-warning ms-2">حذف فیلتر</button>');
+                clearButton.on('click', () => {
+                    delete state.filterType;
+                    const searchInput = $(`#${config.apiName}-search`);
+                    if (searchInput.length) {
+                        searchInput.val('');
+                        state.searchTerm = '';
+                    }
+                    load();
+                });
+                filterInfoContainer.html(`<div class="alert alert-info py-1">${message}</div>`).find('div').append(clearButton);
+            }
+        } else {
+            // Clear filter type if not provided
+            delete state.filterType;
+        }
+
+        if (state.balanceFilter) {
+            payload.balanceFilter = state.balanceFilter;
+        }
+        if (state.includeUncashedChecks) {
+            payload.includeUncashedChecks = true;
+        }
+
+        const response = await Api.call('get_paginated_data', payload);
+        // END FIX
+
         if (response) {
             if (config.renderTable) {
                 config.renderTable(response.data);
@@ -42,110 +76,82 @@ function createEntityManager(config) {
         });
     }
 
-    function attachEvents() {
-        const tableId = `#${config.tableName.replace(/_/g, '-')}-table`;
-        const searchInputId = `#${config.apiName}-search`;
+    const manager = {
+        init: function () {
+            const tableId = `#${config.tableName.replace(/_/g, '-')}-table`;
+            const searchInputId = `#${config.apiName}-search`;
 
-        $('body').on('click', `${tableId} .btn-edit`, function () {
-            if ($(this).data('type') === config.apiName) {
-                UI.hideModalError(config.modalId);
-                manager.prepareModal($(this).data('entity'), null);
-            }
-        });
+            $('body').on('click', `${tableId} .btn-edit`, function () {
+                if ($(this).data('type') === config.apiName) {
+                    UI.hideModalError(config.modalId);
+                    // Ensure the manager's prepareModal is called, which will be the one from the config
+                    manager.prepareModal($(this).data('entity'));
+                }
+            });
 
-        $('body').on('click', `${tableId} .btn-delete`, function (e) {
-            e.stopImmediatePropagation();
-            if ($(this).data('type') === config.apiName) {
-                if (config.handleDelete) {
-                    config.handleDelete($(this).data('id'), $(this).data('username'));
-                } else {
+            $('body').on('click', `${tableId} .btn-delete`, function (e) {
+                if ($(this).data('type') === config.apiName) {
                     handleDelete($(this).data('id'));
                 }
-            }
-        });
-
-        if (config.addBtnId) {
-            $(config.addBtnId).on('click', () => {
-                UI.hideModalError(config.modalId);
-                manager.prepareModal(null, null);
             });
-        }
 
-        if (config.formId) {
-            $(config.formId).on('submit', async function (e) {
-                e.preventDefault();
-                const onSave = activeOnSaveCallback; // Read from the scoped variable
-                activeOnSaveCallback = null;      // Clear it for the next use
+            if (config.addBtnId) {
+                $(config.addBtnId).on('click', () => {
+                    UI.hideModalError(config.modalId);
+                    manager.prepareModal(null);
+                });
+            }
 
-                const data = config.getFormData();
-                UI.hideModalError(config.modalId);
-                UI.showLoader();
-                const result = await Api.call(`save_${config.apiName}`, data);
-                UI.hideLoader();
+            if (config.formId) {
+                $(config.formId).off('submit').on('submit', async function (e) {
+                    e.preventDefault();
+                    if (!this.checkValidity()) {
+                        this.reportValidity();
+                        return;
+                    }
 
-                if (result?.success) {
-                    const savedData = { ...data, id: result.id };
+                    // This now correctly calls the getFormData from product-manager.js
+                    const data = manager.getFormData();
+                    UI.hideModalError(config.modalId);
+                    UI.showLoader();
+                    const result = await Api.call(`save_${config.apiName}`, data);
+                    UI.hideLoader();
 
-                    if (onSave) {
-                        // ** THE FINAL FIX IS HERE **
-                        // Before hiding the modal, explicitly remove focus from any element within it.
-                        // This prevents the "aria-hidden" focus conflict reported in the console.
-                        if (document.activeElement) {
-                            document.activeElement.blur();
-                        }
-
-                        $(config.modalId).one('hidden.bs.modal', function () {
-                            onSave(savedData);
-                        });
-                        $(config.modalId).modal('hide');
-                    } else {
+                    if (result?.success) {
                         UI.showSuccess(`${config.nameFa} با موفقیت ذخیره شد.`);
                         $(config.modalId).modal('hide');
 
-                        if (config.refreshCacheKeys) {
-                            await App.updateCache(config.refreshCacheKeys);
-                        }
-                        if (Array.isArray(config.refreshTables)) {
-                            for (const table of config.refreshTables) {
-                                const manager = App.getManager(table);
-                                if (manager) await manager.load();
-                            }
+                        if (config.onSuccess) {
+                            config.onSuccess(result, data);
                         } else {
+                            if (config.refreshCacheKeys) {
+                                await App.updateCache(config.refreshCacheKeys);
+                            }
                             await load();
                         }
+                    } else if (result?.error) {
+                        UI.showModalError(config.modalId, result.error);
                     }
-                } else if (result?.error) {
-                    UI.showModalError(config.modalId, result.error);
-                }
-            });
-        }
+                });
+            }
 
-
-        if ($(searchInputId).length) {
-            const searchHandler = UI.debounce(() => {
-                state.searchTerm = $(searchInputId).val();
-                state.currentPage = 1;
-                load();
-            }, 500);
-            $(searchInputId).on('input', searchHandler);
-        }
-    }
-
-    const manager = {
-        init: attachEvents,
-        load,
-        prepareModal: (entity = null, onSaveCallback = null) => {
-            activeOnSaveCallback = onSaveCallback; // Set the scoped variable
-            config.prepareModal(entity);
+            if ($(searchInputId).length) {
+                const searchHandler = UI.debounce(() => {
+                    delete state.filterType; // Clear special filters when searching
+                    $(`#${config.tableName}-filter-info`).empty();
+                    state.searchTerm = $(searchInputId).val();
+                    state.currentPage = 1;
+                    load();
+                }, 500);
+                $(searchInputId).on('input', searchHandler);
+            }
         },
-        getState: () => state,
+        load,
+        // Always use the functions passed from the specific manager's config
+        prepareModal: config.prepareModal,
+        getFormData: config.getFormData,
+        handleDelete: handleDelete
     };
-
-    for (const key in config) {
-        if (typeof config[key] === 'function' && !manager.hasOwnProperty(key)) {
-            manager[key] = config[key];
-        }
-    }
 
     return manager;
 }
