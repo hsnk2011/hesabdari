@@ -596,7 +596,10 @@ const BankStatementParsers = (() => {
             const docNo = idx.doc >= 0 ? toEnglishDigits(cells[idx.doc] || '').trim() : '';
             const tracking = extractBlubankTracking(desc);
             const counterparty = extractBlubankCounterparty(desc);
-            const description = [txnType, desc].filter(Boolean).join(' — ');
+            // Blu's «شرح سند» usually starts with the type already («انتقال به سپرده بلو …»).
+            const description = (txnType && normalizeHeader(desc).startsWith(normalizeHeader(txnType)))
+                ? desc
+                : [txnType, desc].filter(Boolean).join(' — ');
             rows.push({
                 date,
                 time: time || null,

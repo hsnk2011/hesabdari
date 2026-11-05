@@ -1179,9 +1179,35 @@ class BankImport extends BaseModel {
         }
     }
 
-    /** Compact bank-line details for appending to ledger description. */
-    public function buildBankDetailSnippet($bankItem) {
+    /** Text normalised for "is it already there" checks: Latin digits, ی/ک, single spaces. */
+    private function bankComparable($text) {
+        $text = strtr((string)$text, [
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+            'ي' => 'ی', 'ك' => 'ک',
+        ]);
+        return trim(preg_replace('/\s+/u', ' ', $text));
+    }
+
+    private function bankTextHas($haystack, $value) {
+        $value = $this->bankComparable($value);
+        return $value !== '' && mb_strpos($this->bankComparable($haystack), $value, 0, 'UTF-8') !== false;
+    }
+
+    /**
+     * Compact bank-line details for appending to ledger description.
+     * Parts the description ($existing) or an earlier part already shows are
+     * left out, so the bank text, the counterparty and numbers appear once.
+     */
+    public function buildBankDetailSnippet($bankItem, $existing = '') {
         $parts = [];
+        $seen = (string)$existing;
+        $add = function ($label, $value) use (&$parts, &$seen) {
+            $value = trim((string)$value);
+            if ($value === '' || $this->bankTextHas($seen, $value)) return;
+            $parts[] = $label . ': ' . $value;
+            $seen .= ' ' . $value;
+        };
         $date = trim((string)($bankItem['transaction_date'] ?? ''));
         if ($date !== '') {
             $parts[] = 'تاریخ: ' . (function_exists('gregorian_to_jalali') ? gregorian_to_jalali($date) : $date);
@@ -1194,20 +1220,13 @@ class BankImport extends BaseModel {
         if (abs($amt) > 0.0001) {
             $parts[] = 'مبلغ بانک: ' . number_format(abs($amt), 0, '.', ',') . ($amt >= 0 ? ' (واریز)' : ' (برداشت)');
         }
-        $desc = trim((string)($bankItem['description'] ?? ''));
-        if ($desc !== '') $parts[] = 'شرح: ' . $desc;
-        $cp = trim((string)($bankItem['counterparty'] ?? ''));
-        if ($cp !== '') $parts[] = 'طرف: ' . $cp;
-        $track = trim((string)($bankItem['tracking_number'] ?? ''));
-        if ($track !== '') $parts[] = 'پیگیری: ' . $track;
-        $ref = trim((string)($bankItem['reference_number'] ?? ''));
-        if ($ref !== '' && $ref !== $track) $parts[] = 'مرجع: ' . $ref;
-        $doc = trim((string)($bankItem['document_number'] ?? ''));
-        if ($doc !== '') $parts[] = 'سند: ' . $doc;
-        $branch = trim((string)($bankItem['branch'] ?? ''));
-        if ($branch !== '') $parts[] = 'شعبه: ' . $branch;
-        $note = trim((string)($bankItem['note'] ?? ''));
-        if ($note !== '') $parts[] = 'یادداشت: ' . $note;
+        $add('شرح', $bankItem['description'] ?? '');
+        $add('طرف', $bankItem['counterparty'] ?? '');
+        $add('پیگیری', $bankItem['tracking_number'] ?? '');
+        $add('مرجع', $bankItem['reference_number'] ?? '');
+        $add('سند', $bankItem['document_number'] ?? '');
+        $add('شعبه', $bankItem['branch'] ?? '');
+        $add('یادداشت', $bankItem['note'] ?? '');
         return implode(' | ', $parts);
     }
 
@@ -1217,7 +1236,7 @@ class BankImport extends BaseModel {
         if (mb_strpos($oldDesc, $marker, 0, 'UTF-8') !== false) {
             return $oldDesc;
         }
-        $snippet = $this->buildBankDetailSnippet($bankItem);
+        $snippet = $this->buildBankDetailSnippet($bankItem, $oldDesc);
         if ($snippet === '') {
             return $oldDesc;
         }

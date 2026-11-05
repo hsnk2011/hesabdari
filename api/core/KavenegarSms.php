@@ -460,7 +460,7 @@ class KavenegarSms {
 
     /**
      * Normalize Kavenegar line / sender (English digits only).
-     * Example dedicated line: 1000xxxxxx
+     * Example dedicated line: 9981803830
      */
     public static function normalizeSenderLine($raw) {
         $p = trim((string)$raw);

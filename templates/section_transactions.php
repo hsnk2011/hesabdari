@@ -1,68 +1,81 @@
 <div class="tab-pane fade" id="transactions" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4>مرکز تراکنشات</h4>
-        <div class="btn-group">
-            <button class="btn btn-danger" id="add-expense-btn-from-tx"><i class="bi bi-wallet2 me-2"></i>ثبت هزینه جدید</button>
-            <button class="btn btn-success" id="add-income-btn-from-tx"><i class="bi bi-cash-coin me-2"></i>ثبت درآمد جدید</button>
-            <button class="btn btn-primary" id="add-payment-btn-from-tx"><i class="bi bi-plus-circle me-2"></i>ثبت پرداخت/دریافت</button>
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">تراکنشات</h4>
+            <p class="ui-page-sub">همه ورودی و خروجی حساب‌ها: پرداخت و دریافت، هزینه و درآمد</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-outline-danger" id="add-expense-btn-from-tx"><i class="bi bi-wallet2"></i>هزینه</button>
+            <button class="btn btn-outline-success" id="add-income-btn-from-tx"><i class="bi bi-cash-coin"></i>درآمد</button>
+            <button class="btn btn-primary" id="add-payment-btn-from-tx"><i class="bi bi-plus-lg"></i>پرداخت / دریافت</button>
         </div>
     </div>
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="transaction-date-filter">
-        <div class="input-group input-group-sm search-box" style="flex:1 1 170px;min-width:150px;width:auto">
-            <span class="input-group-text"><i class="bi bi-search"></i></span>
-            <input type="text" class="form-control" id="transaction-search" placeholder="جستجو در شرح، حساب، مبلغ...">
+
+    <div class="ui-panel">
+        <div class="ui-toolbar" id="transaction-date-filter">
+            <div class="ui-search search-box">
+                <i class="bi bi-search"></i>
+                <input type="text" class="form-control" id="transaction-search" placeholder="جستجو در شرح، حساب، مبلغ...">
+            </div>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="transaction-account-filter"><i class="bi bi-bank"></i></label>
+                <select class="form-select" id="transaction-account-filter" title="فیلتر حساب">
+                    <option value="">همه حساب‌ها</option>
+                </select>
+            </div>
+            <div class="btn-group ui-segmented" role="group" id="transaction-filter-buttons">
+                <button type="button" class="btn btn-outline-secondary active" data-filter="">همه</button>
+                <button type="button" class="btn btn-outline-secondary" data-filter="payment">پرداخت/دریافت</button>
+                <button type="button" class="btn btn-outline-secondary" data-filter="expense">هزینه‌ها</button>
+                <button type="button" class="btn btn-outline-secondary" data-filter="income">درآمدها</button>
+            </div>
+            <div class="input-group ui-date-range">
+                <span class="input-group-text">از</span>
+                <input type="text" class="form-control persian-datepicker" id="transaction-date-from" placeholder="تاریخ شروع" title="از تاریخ" autocomplete="off">
+                <span class="input-group-text">تا</span>
+                <input type="text" class="form-control persian-datepicker" id="transaction-date-to" placeholder="تاریخ پایان" title="تا تاریخ" autocomplete="off">
+                <button type="button" class="btn btn-outline-secondary" id="transaction-date-clear" title="پاک کردن فیلتر تاریخ"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <button type="button" class="btn btn-outline-secondary" id="transaction-show-pending-checks" title="نمایش چک‌های سررسید نرسیده / در انتظار">
+                <i class="bi bi-calendar-event"></i>چک‌های آینده
+            </button>
+            <div class="ui-toolbar-end">
+                <label class="ui-limit" for="transaction-limit">نمایش
+                    <select class="form-select form-select-sm" id="transaction-limit" title="تعداد ردیف در هر صفحه">
+                        <option value="10">10 ردیف</option>
+                        <option value="15" selected>15 ردیف</option>
+                        <option value="25">25 ردیف</option>
+                        <option value="50">50 ردیف</option>
+                        <option value="100">100 ردیف</option>
+                        <option value="1000000">همه</option>
+                    </select>
+                </label>
+            </div>
         </div>
-        <select class="form-select form-select-sm w-auto" id="transaction-account-filter" title="فیلتر حساب" style="max-width:190px">
-            <option value="">همه حساب‌ها</option>
-        </select>
-        <select class="form-select form-select-sm w-auto" id="transaction-limit" title="تعداد ردیف در هر صفحه">
-            <option value="10">10 ردیف</option>
-            <option value="15" selected>15 ردیف</option>
-            <option value="25">25 ردیف</option>
-            <option value="50">50 ردیف</option>
-            <option value="100">100 ردیف</option>
-            <option value="1000000">همه</option>
-        </select>
-        <div class="btn-group btn-group-sm" role="group" id="transaction-filter-buttons">
-            <button type="button" class="btn btn-outline-secondary active" data-filter="">همه</button>
-            <button type="button" class="btn btn-outline-secondary" data-filter="payment">پرداخت/دریافت</button>
-            <button type="button" class="btn btn-outline-secondary" data-filter="expense">هزینه‌ها</button>
-            <button type="button" class="btn btn-outline-secondary" data-filter="income">درآمدها</button>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover" id="transactions-table">
+                <thead class="table-light">
+                    <tr>
+                        <th class="sortable-header" data-sort-by="date">تاریخ
+                            <span class="sort-indicator"></span>
+                        </th>
+                        <th>شرح کلی</th>
+                        <th>حساب</th>
+                        <th class="sortable-header text-success" data-sort-by="credit">بستانکار (ورودی)
+                            <span class="sort-indicator"></span>
+                        </th>
+                        <th class="sortable-header text-danger" data-sort-by="debit">بدهکار (خروجی)
+                            <span class="sort-indicator"></span>
+                        </th>
+                        <th>توضیحات</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="transactions-table-body"></tbody>
+            </table>
         </div>
-        <div class="input-group input-group-sm w-auto">
-            <span class="input-group-text">از</span>
-            <input type="text" class="form-control persian-datepicker" id="transaction-date-from" style="max-width:105px" placeholder="تاریخ شروع" title="از تاریخ" autocomplete="off">
-            <span class="input-group-text">تا</span>
-            <input type="text" class="form-control persian-datepicker" id="transaction-date-to" style="max-width:105px" placeholder="تاریخ پایان" title="تا تاریخ" autocomplete="off">
-            <button type="button" class="btn btn-outline-secondary" id="transaction-date-clear" title="پاک کردن فیلتر تاریخ"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <button type="button" class="btn btn-outline-info btn-sm" id="transaction-show-pending-checks" title="نمایش چک‌های سررسید نرسیده / در انتظار">
-            <i class="bi bi-calendar-event me-1"></i>چک‌های آینده
-        </button>
+        <div class="pagination-container" data-table="transactions"></div>
     </div>
-    <div class="table-responsive">
-        <table class="table table-sm table-hover" id="transactions-table">
-            <thead class="table-light">
-                <tr>
-                    <th class="sortable-header" data-sort-by="date">تاریخ
-                        <span class="sort-indicator"></span>
-                    </th>
-                    <th>شرح کلی</th>
-                    <th>حساب</th>
-                    <th class="sortable-header text-success" data-sort-by="credit">بستانکار (ورودی)
-                        <span class="sort-indicator"></span>
-                    </th>
-                    <th class="sortable-header text-danger" data-sort-by="debit">بدهکار (خروجی)
-                        <span class="sort-indicator"></span>
-                    </th>
-                    <th>توضیحات</th>
-                    <th>عملیات</th>
-                </tr>
-            </thead>
-            <tbody id="transactions-table-body"></tbody>
-        </table>
-    </div>
-    <div class="pagination-container" data-table="transactions"></div>
 </div>
 
 <div class="modal fade" id="transactionModal" tabindex="-1">

@@ -1,50 +1,56 @@
 <div class="tab-pane fade" id="contacts" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h4 class="mb-0">سایر اشخاص</h4>
-        <button class="btn btn-primary" id="add-contact-btn"><i class="bi bi-plus-circle me-2"></i>افزودن شخص جدید</button>
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">سایر اشخاص</h4>
+            <p class="ui-page-sub">طرف‌حساب‌هایی که مشتری، تأمین‌کننده یا شریک نیستند (پیمانکار، اداره مالیات، مالک و …)؛ فاکتور برای آن‌ها ثبت نمی‌شود</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-primary" id="add-contact-btn"><i class="bi bi-plus-lg"></i>شخص جدید</button>
+        </div>
     </div>
-    <p class="text-muted small mb-3">طرف‌حساب‌هایی که مشتری، تأمین‌کننده یا شریک نیستند (پیمانکار، اداره مالیات، مالک و …). فاکتور فروش/خرید برای این نوع ثبت نمی‌شود.</p>
-    <div id="contacts-filter-info"></div>
-    <div class="row g-2 align-items-center mb-3">
-        <div class="col-md-5">
-            <div class="input-group search-box">
-                <span class="input-group-text"><i class="bi bi-search"></i></span>
+
+    <div class="ui-panel">
+        <div class="ui-toolbar">
+            <div class="ui-search search-box">
+                <i class="bi bi-search"></i>
                 <input type="text" class="form-control" id="contact-search" placeholder="جستجو در نام، تلفن، کد ملی، یادداشت...">
             </div>
-        </div>
-        <div class="col-md-2">
-            <select class="form-select pagination-limit-select" id="contacts-limit-select" data-table="contacts">
-                <option value="10">10 ردیف</option>
-                <option value="15">15 ردیف</option>
-                <option value="25" selected>25 ردیف</option>
-                <option value="50">50 ردیف</option>
-                <option value="100">100 ردیف</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select class="form-select" id="contacts-balance-filter">
-                <option value="">همه وضعیت‌ها</option>
-                <option value="positive">فقط بستانکار</option>
-                <option value="negative">فقط بدهکار</option>
-                <option value="settled">تسویه‌شده</option>
-            </select>
-        </div>
-        <div class="col-md-2 text-end">
-            <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="bi bi-layout-three-columns me-1"></i>ستون‌ها
-                </button>
-                <div class="dropdown-menu dropdown-menu-end p-2 shadow" id="contacts-column-menu" style="min-width: 220px;"></div>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="contacts-balance-filter"><i class="bi bi-funnel"></i></label>
+                <select class="form-select" id="contacts-balance-filter">
+                    <option value="">همه وضعیت‌ها</option>
+                    <option value="positive">فقط بستانکار</option>
+                    <option value="negative">فقط بدهکار</option>
+                    <option value="settled">تسویه‌شده</option>
+                </select>
+            </div>
+            <div class="ui-toolbar-end">
+                <label class="ui-limit" for="contacts-limit-select">نمایش
+                    <select class="form-select pagination-limit-select form-select-sm" id="contacts-limit-select" data-table="contacts">
+                        <option value="10">10</option>
+                        <option value="15">15</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                ردیف</label>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle btn-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-layout-three-columns"></i> ستون‌ها
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end p-2 shadow" id="contacts-column-menu" style="min-width: 220px;"></div>
+                </div>
             </div>
         </div>
+        <div id="contacts-filter-info" class="ui-filter-info"></div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="contacts-table">
+                <thead><tr></tr></thead>
+                <tbody id="contacts-table-body"></tbody>
+            </table>
+        </div>
+        <div class="pagination-container" data-table="contacts"></div>
     </div>
-    <div class="table-responsive">
-        <table class="table table-striped table-hover" id="contacts-table">
-            <thead><tr></tr></thead>
-            <tbody id="contacts-table-body"></tbody>
-        </table>
-    </div>
-    <div class="pagination-container" data-table="contacts"></div>
 </div>
 
 <div class="modal fade" id="contactModal" tabindex="-1">

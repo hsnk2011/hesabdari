@@ -78,8 +78,26 @@ class ReturnInvoice extends BaseModel {
         $paginatedResult = parent::getPaginated($input);
         
         if (!empty($paginatedResult['data'])) {
-            $typeToFetch = !empty($typeParam) ? $typeParam : 'sales_return';
-            $paginatedResult['data'] = $this->fetchReturnInvoiceDetails($paginatedResult['data'], $typeToFetch);
+            if (!empty($typeParam)) {
+                $paginatedResult['data'] = $this->fetchReturnInvoiceDetails($paginatedResult['data'], $typeParam);
+            } else {
+                // Mixed list: each row's items and editability depend on its own type.
+                $byType = ['sales_return' => [], 'purchase_return' => []];
+                foreach ($paginatedResult['data'] as $i => $row) {
+                    $isPurchase = in_array($row['type'] ?? '', ['purchase', 'purchase_return'], true); // the list aliases ri.type to sales/purchase
+                    $byType[$isPurchase ? 'purchase_return' : 'sales_return'][$i] = $row;
+                }
+                $merged = [];
+                foreach ($byType as $type => $rows) {
+                    if (!$rows) continue;
+                    $detailed = $this->fetchReturnInvoiceDetails(array_values($rows), $type);
+                    foreach (array_keys($rows) as $n => $i) {
+                        $merged[$i] = $detailed[$n];
+                    }
+                }
+                ksort($merged);
+                $paginatedResult['data'] = array_values($merged);
+            }
             $paginatedResult['data'] = $this->applyPersonSettlementToReturns($paginatedResult['data']);
         }
         

@@ -2,10 +2,193 @@
 
 const Dashboard = (function () {
 
+    const JALALI_MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+    let lastSalesData = null;
+
+    function salesPeriodKey() {
+        return (typeof AppConfig !== 'undefined' && AppConfig.STORAGE_KEYS && AppConfig.STORAGE_KEYS.DASHBOARD_SALES_PERIOD) || 'hesabdari_dashboard_sales_period';
+    }
+
+    function getSalesPeriod() {
+        try { return localStorage.getItem(salesPeriodKey()) === 'mtd' ? 'mtd' : '30d'; } catch (e) { return '30d'; }
+    }
+
+    /** Sales card: last 30 days or from the 1st of the current Jalali month (user's choice). */
+    function renderSales(data) {
+        if (!data) return;
+        lastSalesData = data;
+        const period = getSalesPeriod();
+        $('#dashboard-sales-period').val(period);
+        if (period === 'mtd') {
+            const monthIdx = parseInt(String(data.salesMonthStart || '').split('/')[1], 10) - 1;
+            const monthName = JALALI_MONTHS[monthIdx] || 'ماه';
+            $('#dashboard-total-sales').text(UI.formatCurrency(data.salesMonthToDate || 0));
+            $('#dashboard-total-sales-note').text(`جمع فاکتورهای فروش از ۱ ${monthName} تا امروز`);
+        } else {
+            $('#dashboard-total-sales').text(UI.formatCurrency(data.salesLast30Days || 0));
+            $('#dashboard-total-sales-note').text('جمع فاکتورهای فروش یک ماه اخیر');
+        }
+    }
+
+    // تطبیق سفارش کارخانه با موجودی انبار فیزیکی (ابعاد نزدیک) + جستجو در سفارش‌ها
+    const orderMatchesById = {};
+    const ORDER_MATCH_TOLERANCES = [5, 10, 20, 30];
+
+    function orderToleranceKey() {
+        return (typeof AppConfig !== 'undefined' && AppConfig.STORAGE_KEYS && AppConfig.STORAGE_KEYS.DASHBOARD_ORDER_TOLERANCE) || 'hesabdari_dashboard_order_tolerance';
+    }
+
+    function getOrderTolerance() {
+        try {
+            const v = parseInt(localStorage.getItem(orderToleranceKey()), 10);
+            return ORDER_MATCH_TOLERANCES.includes(v) ? v : 10;
+        } catch (e) { return 10; }
+    }
+
+    const faNum = (n) => Number(n || 0).toLocaleString('fa-IR');
+    const diffLabel = (cm) => parseInt(cm, 10) === 0 ? 'دقیق' : `${faNum(cm)} سانت`;
+    const MATCH_TIERS = {
+        product: { label: 'همان فرش', badge: 'bg-success', btn: 'btn-success' },
+        design: { label: 'همان طرح، رنگ دیگر', badge: 'bg-info text-dark', btn: 'btn-info' },
+        size: { label: 'فقط سایز', badge: 'bg-secondary', btn: 'btn-outline-secondary' }
+    };
+
+    function orderMatchBadge(order) {
+        const c = order.match_counts || {};
+        const total = (c.product || 0) + (c.design || 0) + (c.size || 0);
+        const best = ['product', 'design', 'size'].find(t => (c[t] || 0) > 0);
+        if (!best) return '<span class="text-muted small">—</span>';
+        const tier = MATCH_TIERS[best];
+        const rest = total - c[best];
+        const title = `همان فرش: ${faNum(c.product)} — همان طرح: ${faNum(c.design)} — فقط سایز: ${faNum(c.size)}`;
+        return `<button type="button" class="btn btn-sm ${tier.btn} py-0 order-stock-match-btn" data-id="${order.id}" title="${title}">
+            ${faNum(c[best])} ${best === 'design' ? 'همان طرح' : tier.label}${rest > 0 ? ` <small>+${faNum(rest)}</small>` : ''}
+        </button>`;
+    }
+
+    async function loadOrderStockMatches() {
+        const result = await Api.call('match_order_stock', { tolerance_cm: getOrderTolerance() });
+        (result?.orders || []).forEach(o => { orderMatchesById[o.id] = o; });
+        $('.order-stock-match-cell').each(function () {
+            const order = orderMatchesById[$(this).data('id')];
+            $(this).html(order ? orderMatchBadge(order) : '<span class="text-muted small">—</span>');
+        });
+    }
+
+    function orderStageLabel(order) {
+        if (order.status === 'sold') {
+            return UI.escapeHtml(order.customer_name || 'فروخته‌شده') + (order.sales_invoice_number ? ' / ' + UI.escapeHtml(order.sales_invoice_number) : '');
+        }
+        return order.status === 'returned' ? '<span class="text-muted">مرجوعی — بدون مشتری</span>' : '<span class="text-muted">بدون مشتری</span>';
+    }
+
+    async function searchOrders() {
+        const term = String($('#dashboard-order-search').val() || '').trim();
+        const box = $('#dashboard-order-search-results');
+        const list = $('#dashboard-warehouses-list');
+        if (!term) {
+            box.addClass('d-none').empty();
+            list.removeClass('d-none');
+            return;
+        }
+        const result = await Api.call('match_order_stock', { search: term, tolerance_cm: getOrderTolerance() });
+        if (String($('#dashboard-order-search').val() || '').trim() !== term) return; // جستجوی جدیدتری در راه است
+        const orders = result?.orders || [];
+        orders.forEach(o => { orderMatchesById[o.id] = o; });
+        const isSize = result?.search_kind === 'size';
+
+        const orderRows = orders.length
+            ? orders.map(o => `<tr>
+                <td><code>${UI.escapeHtml(o.serial_id || '-')}</code></td>
+                <td>${UI.escapeHtml(o.product_name || '-')}</td>
+                <td>${UI.escapeHtml(o.design_code || '-')}</td>
+                <td>${UI.escapeHtml(o.colorway || '-')}</td>
+                <td>${UI.escapeHtml(o.dimensions || '-')}</td>
+                ${isSize ? `<td><span class="badge ${parseInt(o.distance_cm, 10) === 0 ? 'bg-success' : 'bg-light text-dark border'}">${diffLabel(o.distance_cm)}</span></td>` : ''}
+                <td>${orderStageLabel(o)}</td>
+                <td>${UI.escapeHtml(o.warehouse_name || '-')}</td>
+                <td>${orderMatchBadge(o)}</td>
+            </tr>`).join('')
+            : `<tr><td colspan="${isSize ? 9 : 8}" class="text-center text-muted">${isSize ? 'سفارشی با ابعاد نزدیک (تا ۵۰ سانت اختلاف) پیدا نشد.' : 'سفارشی پیدا نشد.'}</td></tr>`;
+
+        let stockBlock = '';
+        if (isSize) {
+            const stock = result?.stock_nearest || [];
+            const stockRows = stock.length
+                ? stock.map(s => `<tr>
+                    <td><code>${UI.escapeHtml(s.serial_id || '-')}</code></td>
+                    <td>${UI.escapeHtml(s.product_name || '-')}</td>
+                    <td>${UI.escapeHtml(s.design_code || '-')}</td>
+                    <td>${UI.escapeHtml(s.colorway || '-')}</td>
+                    <td>${UI.escapeHtml(s.dimensions || '-')}</td>
+                    <td><span class="badge ${parseInt(s.diff_cm, 10) === 0 ? 'bg-success' : 'bg-light text-dark border'}">${diffLabel(s.diff_cm)}</span></td>
+                    <td>${UI.escapeHtml(s.warehouse_name || 'بدون انبار')}</td>
+                </tr>`).join('')
+                : '<tr><td colspan="7" class="text-center text-muted">در انبار فیزیکی فرشی با این ابعاد (تا ۵۰ سانت اختلاف) نیست.</td></tr>';
+            stockBlock = `
+                <div class="px-3 py-2 bg-light border-top border-bottom"><strong>نزدیک‌ترین فرش‌های انبار فیزیکی</strong></div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead><tr><th>شناسه</th><th>نام فرش</th><th>کد طرح</th><th>رنگ</th><th>ابعاد</th><th>اختلاف</th><th>انبار</th></tr></thead>
+                        <tbody>${stockRows}</tbody>
+                    </table>
+                </div>`;
+        }
+
+        box.html(`
+            <div class="d-flex justify-content-between align-items-center px-3 py-2 bg-light border-bottom">
+                <strong>سفارش‌های کارخانه — ${faNum(orders.length)} نتیجه</strong>
+                ${isSize ? '<small class="text-muted">به ترتیب نزدیکی ابعاد (تا ۵۰ سانت)</small>' : ''}
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr>
+                        <th>شناسه</th><th>نام فرش</th><th>کد طرح</th><th>رنگ</th><th>ابعاد سفارش</th>
+                        ${isSize ? '<th>اختلاف</th>' : ''}
+                        <th>مشتری</th><th>انبار</th><th>موجود در انبار</th>
+                    </tr></thead>
+                    <tbody>${orderRows}</tbody>
+                </table>
+            </div>
+            ${stockBlock}
+        `).removeClass('d-none');
+        list.addClass('d-none');
+    }
+
+    function showOrderStockMatches(orderId) {
+        const order = orderMatchesById[orderId];
+        if (!order) return;
+        const c = order.match_counts || {};
+        const total = (c.product || 0) + (c.design || 0) + (c.size || 0);
+        const matches = order.matches || [];
+        $('#order-stock-match-title').html(`سفارش: <strong>${UI.escapeHtml(order.product_name || '-')}</strong>
+            — ابعاد <strong>${UI.escapeHtml(order.dimensions || '-')}</strong> — <code>${UI.escapeHtml(order.serial_id || '')}</code>
+            <span class="text-muted small">(تا ±${faNum(getOrderTolerance())} سانت)</span>`);
+        const rows = matches.map(m => {
+            const tier = MATCH_TIERS[m.tier] || MATCH_TIERS.size;
+            return `<tr>
+                <td><code>${UI.escapeHtml(m.serial_id || '-')}</code></td>
+                <td>${UI.escapeHtml(m.product_name || '-')}</td>
+                <td>${UI.escapeHtml(m.design_code || '-')}</td>
+                <td>${UI.escapeHtml(m.colorway || '-')}</td>
+                <td>${UI.escapeHtml(m.dimensions || '-')}</td>
+                <td>${diffLabel(m.diff_cm)}</td>
+                <td>${UI.escapeHtml(m.warehouse_name || 'بدون انبار')}</td>
+                <td><span class="badge ${tier.badge}">${tier.label}</span></td>
+            </tr>`;
+        });
+        if (total > matches.length) {
+            rows.push(`<tr><td colspan="8" class="text-center text-muted small">و ${faNum(total - matches.length)} فرش دیگر با سایز مشابه</td></tr>`);
+        }
+        $('#order-stock-match-body').html(rows.join('') || '<tr><td colspan="8" class="text-center text-muted">موردی نیست.</td></tr>');
+        const modalEl = document.getElementById('orderStockMatchModal');
+        if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+
     function render(data) {
         if (!data) return;
 
-        $('#dashboard-total-sales').text(UI.formatCurrency(data.salesLast30Days));
+        renderSales(data);
         
         // New summary widgets
         $('#dashboard-cash-position').text(UI.formatCurrency(data.cashPosition || 0));
@@ -68,6 +251,9 @@ const Dashboard = (function () {
                                 title="${isSold ? 'تحویل به مشتری' : 'تحویل به انبار فیزیکی'}"
                               >${isSold ? 'تحویل' : 'تحویل به انبار'}</button>`
                             : '';
+                        const matchCell = isOrder
+                            ? `<td class="order-stock-match-cell" data-id="${item.id}"><span class="text-muted small">…</span></td>`
+                            : '';
                         return `<tr>
                             <td><code>${UI.escapeHtml(item.serial_id || '-')}</code></td>
                             <td>${UI.escapeHtml(item.product_name || '-')}</td>
@@ -76,10 +262,11 @@ const Dashboard = (function () {
                             <td>${UI.escapeHtml(item.dimensions || '-')}</td>
                             <td>${stage}</td>
                             <td>${customer}</td>
+                            ${matchCell}
                             <td>${deliverBtn}</td>
                         </tr>`;
                     }).join('')
-                    : `<tr><td colspan="8" class="text-center text-muted">${isOrder ? 'سفارش بازی در این انبار نیست.' : 'فرشی در این انبار نیست.'}</td></tr>`;
+                    : `<tr><td colspan="${isOrder ? 9 : 8}" class="text-center text-muted">${isOrder ? 'سفارش بازی در این انبار نیست.' : 'فرشی در این انبار نیست.'}</td></tr>`;
                 warehouseList.append(`
                     <div class="border-bottom">
                         <div class="d-flex justify-content-between align-items-center px-3 py-2 bg-light">
@@ -104,6 +291,7 @@ const Dashboard = (function () {
                                         <th>ابعاد سفارش</th>
                                         <th>مرحله</th>
                                         <th>مشتری</th>
+                                        ${isOrder ? '<th title="فرش با ابعاد نزدیک در انبار فیزیکی">موجود در انبار</th>' : ''}
                                         <th></th>
                                     </tr>
                                 </thead>
@@ -114,6 +302,12 @@ const Dashboard = (function () {
                 `);
             });
             warehouseHost.show();
+            const hasOrders = pinned.some(w => w.warehouse_type === 'order' && (w.items || []).length);
+            $('#dashboard-order-tools').toggleClass('d-none', !hasOrders);
+            if (hasOrders) {
+                loadOrderStockMatches();
+                if (String($('#dashboard-order-search').val() || '').trim()) searchOrders();
+            }
         } else if (warehouseHost.length) {
             warehouseHost.hide();
             warehouseList.empty();
@@ -551,6 +745,30 @@ const Dashboard = (function () {
         $('body').on('input', '#convert-orders-search', function () {
             clearTimeout(convertOrdersTimer);
             convertOrdersTimer = setTimeout(loadConvertibleOrders, 300);
+        });
+
+        let orderSearchTimer = null;
+        $('#dashboard-order-tolerance').val(String(getOrderTolerance()));
+
+        $('body').on('input', '#dashboard-order-search', function () {
+            clearTimeout(orderSearchTimer);
+            orderSearchTimer = setTimeout(searchOrders, 300);
+        });
+
+        $('body').on('change', '#dashboard-order-tolerance', function () {
+            try { localStorage.setItem(orderToleranceKey(), String(parseInt($(this).val(), 10) || 10)); } catch (e) { /* storage blocked */ }
+            loadOrderStockMatches();
+            if (String($('#dashboard-order-search').val() || '').trim()) searchOrders();
+        });
+
+        $('body').on('click', '.order-stock-match-btn', function (e) {
+            e.preventDefault();
+            showOrderStockMatches($(this).data('id'));
+        });
+
+        $('body').on('change', '#dashboard-sales-period', function () {
+            try { localStorage.setItem(salesPeriodKey(), $(this).val() === 'mtd' ? 'mtd' : '30d'); } catch (e) { /* storage blocked */ }
+            renderSales(lastSalesData);
         });
 
         $('body').on('change', '#convert-orders-select-all', function () {

@@ -447,6 +447,19 @@ body {
     .invoice-form .invoice-payment-card .pay-col-note {
         flex: 1 1 7rem;
     }
+    /* تهاتر: Bootstrap's .row > * has flex-shrink:0 — without these the four fields overflow the card. */
+    .invoice-form .invoice-payment-card .pay-col-setoff-type {
+        flex: 0.8 1 6.5rem;
+    }
+    .invoice-form .invoice-payment-card .pay-col-setoff-person {
+        flex: 1.1 1 8rem;
+    }
+    .invoice-form .invoice-payment-card .pay-col-setoff-invoice {
+        flex: 1.4 1 9rem;
+    }
+    .invoice-form .invoice-payment-card .pay-col-setoff-note {
+        flex: 1 1 7rem;
+    }
 }
 
 @media (min-width: 768px) {
@@ -1431,3 +1444,24 @@ body {
 [data-theme="dark"] .chat-messages { background: #141c33; }
 [data-theme="dark"] .chat-ref { background: rgba(255, 255, 255, .06); }
 [data-theme="dark"] .chat-quote { background: rgba(110, 168, 254, .12); }
+
+/* Theme picker menu («قالب», js/theme.js) — used by both template sets */
+.ui-theme-menu { min-width: 230px; }
+.ui-theme-option { display: flex; align-items: center; gap: .6rem; }
+.ui-theme-swatch { width: 18px; height: 18px; flex: 0 0 18px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .15); }
+.ui-theme-label { display: flex; flex-direction: column; line-height: 1.35; }
+.ui-theme-hint { font-size: .75em; opacity: .7; }
+
+/* Click-to-sort column titles (js/table-sort.js) — used by both template sets */
+th.ui-sort-th { cursor: pointer; user-select: none; white-space: nowrap; }
+th.ui-sort-th:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+th.ui-sort-th .ui-sort-ind { display: inline-block; margin-inline-start: .3em; font-size: .7em; opacity: .35; }
+th.ui-sort-th .ui-sort-ind::before { content: "\25B4\25BE"; letter-spacing: -.15em; }
+th.ui-sort-th[data-ui-sort="asc"] .ui-sort-ind,
+th.ui-sort-th[data-ui-sort="desc"] .ui-sort-ind { opacity: 1; color: var(--ui-accent, #0d6efd); }
+th.ui-sort-th[data-ui-sort="asc"] .ui-sort-ind::before { content: "\25B4"; }
+th.ui-sort-th[data-ui-sort="desc"] .ui-sort-ind::before { content: "\25BE"; }
+
+/* Dashboard sales card (classic): period picker sits in the white-on-blue title */
+.dashboard-sales-period-classic { background: transparent; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.dashboard-sales-period-classic option { color: #212529; background: #fff; }

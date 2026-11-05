@@ -1,107 +1,71 @@
 <div class="tab-pane fade" id="checks" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4>مدیریت چک‌ها</h4>
+    <div class="ui-page-head">
         <div>
-            <button class="btn btn-outline-secondary me-2" id="print-checks-btn" disabled><i class="bi bi-printer me-1"></i>چاپ انتخاب‌شده</button>
-            <button class="btn btn-info me-2" id="discount-checks-btn" disabled><i class="bi bi-calculator me-2"></i>راس‌گیری و انتقال چک</button>
-            <button class="btn btn-primary" id="add-check-btn"><i class="bi bi-plus-circle me-2"></i>ثبت چک جدید</button>
+            <h4 class="ui-page-title">چک‌ها</h4>
+            <p class="ui-page-sub">چک‌های دریافتی نزد ما و چک‌های پرداختنی، با سررسید و وضعیت هر کدام</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-outline-secondary" id="print-checks-btn" disabled><i class="bi bi-printer"></i>چاپ انتخاب‌شده</button>
+            <button class="btn btn-outline-primary" id="discount-checks-btn" disabled><i class="bi bi-calculator"></i>راس‌گیری و انتقال چک</button>
+            <button class="btn btn-primary" id="add-check-btn"><i class="bi bi-plus-lg"></i>چک جدید</button>
         </div>
     </div>
 
-    <!-- Check Summaries -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="card border-success h-100">
-                <div class="card-body">
-                    <h6 class="card-title text-success"><i class="bi bi-wallet2 me-2"></i>چک‌های نزد ما (دریافتی)</h6>
-                    <div id="received-checks-summary" class="mt-3">
-                        <button type="button" class="check-summary-filter btn btn-link text-decoration-none text-body w-100 p-0 text-start" data-check-type="received" data-check-status="in_hand" data-check-due="not_due" title="نمایش چک‌های دریافتی که سررسیدشان نرسیده">
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>در دست (سررسید نرسیده):</span>
-                                <strong id="received-in-hand-count">-</strong>
-                            </div>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>مبلغ کل:</span>
-                                <strong id="received-in-hand-amount" class="text-success">-</strong>
-                            </div>
-                        </button>
-                        <hr>
-                        <button type="button" class="check-summary-filter btn btn-link text-decoration-none text-body w-100 p-0 text-start" data-check-type="received" data-check-status="in_hand" data-check-due="past_due" title="نمایش چک‌های دریافتی سررسید گذشته">
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>سررسید گذشته (هنوز وصول نشده):</span>
-                                <strong id="received-past-due-count" class="text-danger">-</strong>
-                            </div>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>مبلغ کل:</span>
-                                <strong id="received-past-due-amount" class="text-danger">-</strong>
-                            </div>
-                        </button>
-                    </div>
-                </div>
-            </div>
+    <div class="ui-kpis ui-kpis-4">
+        <div id="received-checks-summary" class="ui-contents">
+            <button type="button" class="check-summary-filter ui-kpi ui-kpi-btn" data-check-type="received" data-check-status="in_hand" data-check-due="not_due" title="نمایش چک‌های دریافتی که سررسیدشان نرسیده">
+                <div class="ui-kpi-label"><span>دریافتی نزد ما · سررسید نرسیده</span><span class="ui-kpi-icon is-success"><i class="bi bi-wallet2"></i></span></div>
+                <div class="ui-kpi-value text-success" id="received-in-hand-amount">-</div>
+                <div class="ui-kpi-note"><strong id="received-in-hand-count">-</strong> فقره</div>
+            </button>
+            <button type="button" class="check-summary-filter ui-kpi ui-kpi-btn" data-check-type="received" data-check-status="in_hand" data-check-due="past_due" title="نمایش چک‌های دریافتی سررسید گذشته">
+                <div class="ui-kpi-label"><span>دریافتی · سررسید گذشته، وصول نشده</span><span class="ui-kpi-icon is-danger"><i class="bi bi-exclamation-circle"></i></span></div>
+                <div class="ui-kpi-value text-danger" id="received-past-due-amount">-</div>
+                <div class="ui-kpi-note"><strong id="received-past-due-count">-</strong> فقره</div>
+            </button>
         </div>
-        <div class="col-md-6">
-            <div class="card border-danger h-100">
-                <div class="card-body">
-                    <h6 class="card-title text-danger"><i class="bi bi-cash-stack me-2"></i>چک‌های پرداختنی ما</h6>
-                    <div id="payable-checks-summary" class="mt-3">
-                        <button type="button" class="check-summary-filter btn btn-link text-decoration-none text-body w-100 p-0 text-start" data-check-type="payable" data-check-status="payable" data-check-due="not_due" title="نمایش چک‌های پرداختنی که سررسیدشان نرسیده">
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>پرداخت نشده (سررسید نرسیده):</span>
-                                <strong id="payable-unpaid-count">-</strong>
-                            </div>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>مبلغ کل:</span>
-                                <strong id="payable-unpaid-amount" class="text-danger">-</strong>
-                            </div>
-                        </button>
-                        <hr>
-                        <button type="button" class="check-summary-filter btn btn-link text-decoration-none text-body w-100 p-0 text-start" data-check-type="payable" data-check-status="payable" data-check-due="past_due" title="نمایش چک‌های پرداختنی سررسید گذشته">
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>سررسید گذشته (هنوز پرداخت نشده):</span>
-                                <strong id="payable-past-due-count" class="text-danger">-</strong>
-                            </div>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span>مبلغ کل:</span>
-                                <strong id="payable-past-due-amount" class="text-danger">-</strong>
-                            </div>
-                        </button>
-                    </div>
-                </div>
-            </div>
+        <div id="payable-checks-summary" class="ui-contents">
+            <button type="button" class="check-summary-filter ui-kpi ui-kpi-btn" data-check-type="payable" data-check-status="payable" data-check-due="not_due" title="نمایش چک‌های پرداختنی که سررسیدشان نرسیده">
+                <div class="ui-kpi-label"><span>پرداختنی ما · سررسید نرسیده</span><span class="ui-kpi-icon is-warning"><i class="bi bi-cash-stack"></i></span></div>
+                <div class="ui-kpi-value text-danger" id="payable-unpaid-amount">-</div>
+                <div class="ui-kpi-note"><strong id="payable-unpaid-count">-</strong> فقره</div>
+            </button>
+            <button type="button" class="check-summary-filter ui-kpi ui-kpi-btn" data-check-type="payable" data-check-status="payable" data-check-due="past_due" title="نمایش چک‌های پرداختنی سررسید گذشته">
+                <div class="ui-kpi-label"><span>پرداختنی · سررسید گذشته، پرداخت نشده</span><span class="ui-kpi-icon is-danger"><i class="bi bi-exclamation-triangle"></i></span></div>
+                <div class="ui-kpi-value text-danger" id="payable-past-due-amount">-</div>
+                <div class="ui-kpi-note"><strong id="payable-past-due-count">-</strong> فقره</div>
+            </button>
         </div>
     </div>
-
-    <div id="checks-filter-info" class="mb-2"></div>
-    <div class="card border-0 bg-light mb-3">
-        <div class="card-body py-3">
-            <div class="d-flex flex-wrap gap-2 mb-3" id="check-filter-presets" role="group" aria-label="تفکیک سریع چک‌ها">
-                <button type="button" class="btn btn-sm btn-outline-secondary check-filter-preset active" data-preset="all">همه</button>
-                <button type="button" class="btn btn-sm btn-outline-success check-filter-preset" data-preset="received_in_hand">دریافتی نزد ما</button>
-                <button type="button" class="btn btn-sm btn-outline-danger check-filter-preset" data-preset="payable_open">پرداختنی باز</button>
-                <button type="button" class="btn btn-sm btn-outline-warning check-filter-preset" data-preset="past_due">سررسید گذشته</button>
-                <button type="button" class="btn btn-sm btn-outline-primary check-filter-preset" data-preset="next_7">۷ روز آینده</button>
-                <button type="button" class="btn btn-sm btn-outline-dark check-filter-preset" data-preset="endorsed">واگذار شده</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary check-filter-preset" data-preset="cashed">وصول / پاس شده</button>
+    <div class="ui-panel">
+        <div class="ui-toolbar ui-toolbar-stack">
+            <div class="btn-group ui-segmented ui-segmented-wrap" id="check-filter-presets" role="group" aria-label="تفکیک سریع چک‌ها">
+                <button type="button" class="btn check-filter-preset active" data-preset="all">همه</button>
+                <button type="button" class="btn check-filter-preset" data-preset="received_in_hand">دریافتی نزد ما</button>
+                <button type="button" class="btn check-filter-preset" data-preset="payable_open">پرداختنی باز</button>
+                <button type="button" class="btn check-filter-preset" data-preset="past_due">سررسید گذشته</button>
+                <button type="button" class="btn check-filter-preset" data-preset="next_7">۷ روز آینده</button>
+                <button type="button" class="btn check-filter-preset" data-preset="endorsed">واگذار شده</button>
+                <button type="button" class="btn check-filter-preset" data-preset="cashed">وصول / پاس شده</button>
             </div>
-            <div class="d-flex flex-nowrap align-items-end gap-2 overflow-auto pb-1">
-                <div class="flex-grow-1" style="min-width: 180px;">
-                    <label class="form-label small mb-1" for="check-search">جستجو</label>
-                    <div class="input-group search-box">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <div class="ui-filter-grid">
+                <div class="ui-field ui-field-grow">
+                    <label class="form-label" for="check-search">جستجو</label>
+                    <div class="ui-search search-box">
+                        <i class="bi bi-search"></i>
                         <input type="text" class="form-control" id="check-search" placeholder="شماره، صادرکننده، مبلغ...">
                     </div>
                 </div>
-                <div style="min-width: 120px; flex: 1 1 120px;">
-                    <label class="form-label small mb-1" for="check-filter-type">نوع</label>
+                <div class="ui-field">
+                    <label class="form-label" for="check-filter-type">نوع</label>
                     <select class="form-select" id="check-filter-type">
                         <option value="">همه انواع</option>
                         <option value="received">دریافتی</option>
                         <option value="payable">پرداختی</option>
                     </select>
                 </div>
-                <div style="min-width: 150px; flex: 1 1 150px;">
-                    <label class="form-label small mb-1" for="check-filter-status">وضعیت</label>
+                <div class="ui-field">
+                    <label class="form-label" for="check-filter-status">وضعیت</label>
                     <select class="form-select" id="check-filter-status">
                         <option value="">همه وضعیت‌ها</option>
                         <option value="open">باز (نزد ما / پرداختنی)</option>
@@ -111,8 +75,8 @@
                         <option value="endorsed">واگذار شده</option>
                     </select>
                 </div>
-                <div style="min-width: 130px; flex: 1 1 130px;">
-                    <label class="form-label small mb-1" for="check-filter-due">سررسید</label>
+                <div class="ui-field">
+                    <label class="form-label" for="check-filter-due">سررسید</label>
                     <select class="form-select" id="check-filter-due">
                         <option value="">همه سررسیدها</option>
                         <option value="past_due">سررسید گذشته</option>
@@ -123,24 +87,24 @@
                         <option value="this_month">این ماه شمسی</option>
                     </select>
                 </div>
-                <div style="min-width: 140px; flex: 1 1 140px;">
-                    <label class="form-label small mb-1" for="check-filter-related">ارتباط</label>
+                <div class="ui-field">
+                    <label class="form-label" for="check-filter-related">ارتباط</label>
                     <select class="form-select" id="check-filter-related">
                         <option value="">همه</option>
                         <option value="invoice">متصل به فاکتور</option>
                         <option value="standalone">مستقل</option>
                     </select>
                 </div>
-                <div style="min-width: 110px; flex: 1 1 110px;">
-                    <label class="form-label small mb-1" for="check-filter-due-from">سررسید از</label>
+                <div class="ui-field">
+                    <label class="form-label" for="check-filter-due-from">سررسید از</label>
                     <input type="text" class="form-control persian-datepicker" id="check-filter-due-from" autocomplete="off" placeholder="تاریخ">
                 </div>
-                <div style="min-width: 110px; flex: 1 1 110px;">
-                    <label class="form-label small mb-1" for="check-filter-due-to">سررسید تا</label>
+                <div class="ui-field">
+                    <label class="form-label" for="check-filter-due-to">سررسید تا</label>
                     <input type="text" class="form-control persian-datepicker" id="check-filter-due-to" autocomplete="off" placeholder="تاریخ">
                 </div>
-                <div style="min-width: 88px; width: 88px; flex: 0 0 88px;">
-                    <label class="form-label small mb-1" for="check-limit">تعداد</label>
+                <div class="ui-field ui-field-narrow">
+                    <label class="form-label" for="check-limit">تعداد</label>
                     <select class="form-select" id="check-limit">
                         <option value="10">10</option>
                         <option value="15" selected>15</option>
@@ -150,33 +114,33 @@
                         <option value="1000000">همه</option>
                     </select>
                 </div>
-                <div style="flex: 0 0 auto;">
-                    <label class="form-label small mb-1 d-block">&nbsp;</label>
-                    <button type="button" class="btn btn-outline-secondary text-nowrap" id="check-filter-reset"><i class="bi bi-x-circle me-1"></i>پاک کردن</button>
+                <div class="ui-field ui-field-btn">
+                    <button type="button" class="btn btn-outline-secondary text-nowrap" id="check-filter-reset"><i class="bi bi-x-circle"></i> پاک کردن</button>
                 </div>
             </div>
         </div>
+        <div id="checks-filter-info" class="ui-filter-info"></div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="checks-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;"><input type="checkbox" id="select-all-checks" class="form-check-input" title="انتخاب همه"></th>
+                        <th class="sortable-header" data-sort-by="type">نوع چک <span class="sort-indicator"></span></th>
+                        <th>شماره چک</th>
+                        <th class="sortable-header" data-sort-by="bankName">بانک <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="issuerName">صادرکننده <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="amount">مبلغ (<span data-currency-label>تومان</span>) <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="dueDate">تاریخ سررسید <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="status">وضعیت <span class="sort-indicator"></span></th>
+                        <th>مربوط به</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="checks-table-body"></tbody>
+            </table>
+        </div>
+        <div class="pagination-container" data-table="checks"></div>
     </div>
-    <div class="table-responsive">
-        <table class="table table-striped table-hover" id="checks-table">
-            <thead>
-                <tr>
-                    <th style="width: 40px;"><input type="checkbox" id="select-all-checks" class="form-check-input" title="انتخاب همه"></th>
-                    <th class="sortable-header" data-sort-by="type">نوع چک <span class="sort-indicator"></span></th>
-                    <th>شماره چک</th>
-                    <th class="sortable-header" data-sort-by="bankName">بانک <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="issuerName">صادرکننده <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="amount">مبلغ (<span data-currency-label>تومان</span>) <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="dueDate">تاریخ سررسید <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="status">وضعیت <span class="sort-indicator"></span></th>
-                    <th>مربوط به</th>
-                    <th>عملیات</th>
-                </tr>
-            </thead>
-            <tbody id="checks-table-body"></tbody>
-        </table>
-    </div>
-    <div class="pagination-container" data-table="checks"></div>
 </div>
 
 <div class="modal fade" id="checkModal" tabindex="-1">
@@ -267,9 +231,45 @@
             </div>
             <div class="modal-footer flex-wrap gap-2">
                 <button type="button" class="btn btn-outline-primary d-none" id="print-transfer-group-btn"><i class="bi bi-printer me-1"></i>چاپ گروه انتقال</button>
-                <button type="button" class="btn btn-outline-warning d-none" id="edit-transfer-payment-btn"><i class="bi bi-pencil-square me-1"></i>ویرایش انتقال</button>
+                <button type="button" class="btn btn-outline-warning d-none" id="edit-transfer-payment-btn"><i class="bi bi-pencil-square me-1"></i>ویرایش این انتقال</button>
+                <button type="button" class="btn btn-outline-warning d-none" id="edit-transfer-group-btn"><i class="bi bi-collection me-1"></i>ویرایش گروه انتقال</button>
                 <button type="button" class="btn btn-outline-secondary" id="print-history-check-btn"><i class="bi bi-printer me-1"></i>چاپ این چک</button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Transfer Group Modal (ویرایش راس‌گیری / انتقال گروهی) -->
+<div class="modal fade" id="editTransferGroupModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>ویرایش گروه انتقال چک</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger form-error" style="display:none;"></div>
+                <div class="small text-muted mb-3" id="edit-transfer-group-info"></div>
+                <div class="mb-3">
+                    <label for="edit-transfer-group-description" class="form-label">توضیحات انتقال</label>
+                    <textarea id="edit-transfer-group-description" class="form-control" rows="2" placeholder="خالی = توضیح خودکار برای هر چک"></textarea>
+                </div>
+                <h6 class="mb-2">چک‌های این گروه</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-3">
+                        <thead class="table-light"><tr><th>شماره</th><th>بانک</th><th>سررسید</th><th>مبلغ</th><th>وضعیت</th><th style="width:70px">حذف</th></tr></thead>
+                        <tbody id="edit-transfer-group-body"></tbody>
+                        <tfoot class="table-secondary"><tr><td colspan="3" class="fw-bold text-start">جمع پس از ذخیره:</td><td class="fw-bold" id="edit-transfer-group-total">۰</td><td colspan="2"></td></tr></tfoot>
+                    </table>
+                </div>
+                <label for="edit-transfer-group-add" class="form-label">افزودن چک «نزد ما» به این انتقال</label>
+                <select id="edit-transfer-group-add" class="form-select" multiple></select>
+                <div class="small text-muted mt-2">چک‌های خارج‌شده به «نزد ما» برمی‌گردند و چک‌های افزوده با همان تاریخ و شخص مقصد منتقل می‌شوند. هزینه تنزیلی که هنگام راس‌گیری ثبت شده خودکار تغییر نمی‌کند؛ در صورت نیاز آن را از بخش هزینه‌ها اصلاح کنید.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" id="save-transfer-group-btn"><i class="bi bi-check-lg me-1"></i>ذخیره تغییرات</button>
             </div>
         </div>
     </div>

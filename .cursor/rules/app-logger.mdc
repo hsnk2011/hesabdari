@@ -1,0 +1,17 @@
+---
+description: Application debug logger (AppLogger) usage
+globs:
+  - "api/**/*.php"
+  - "js/**/*.js"
+alwaysApply: false
+---
+
+# AppLogger (technical / debug logs)
+
+- **Purpose:** Diagnose failures during development. Not the same as `activity_log` (user actions).
+- **Write:** `AppLogger::error($msg, $ctx)` or `app_log_error($msg, $ctx)` after helpers are loaded.
+- **Levels:** DEBUG, INFO, WARNING, ERROR, CRITICAL. With `APP_DEBUG=true`, DEBUG is stored.
+- **Files:** `hesabdari/logs/app.log` (JSONL). Protected by `.htaccess`.
+- **UI:** Settings → لاگ فنی / خطاها
+- **Client:** `AppClientLogger.report('ERROR', message, { component, stack })` — auto-hooks `window.onerror` / unhandledrejection.
+- Redact secrets in context (passwords/tokens are auto-redacted by AppLogger).

@@ -321,6 +321,180 @@ class InventoryController {
         send_json(['items' => db_stmt_to_assoc_array($stmt)]);
     }
 
+    /**
+     * تطبیق سفارش‌های کارخانه با موجودی انبار فیزیکی + جستجو در سفارش‌ها.
+     * اختلاف دو سایز = بیشترین اختلاف ضلع‌ها (سانت)، بعد از مرتب‌کردن ضلع‌ها؛ پس 2x3 و 3x2 یکی‌اند.
+     * رتبه تطبیق: همان محصول (product) > همان کد طرح (design) > فقط سایز (size).
+     * search: سایز کامل (2x3) ⇒ سفارش‌ها به ترتیب نزدیکی سایز + نزدیک‌ترین موجودی انبار؛
+     * سایزِ در حال تایپ (2x) ⇒ پیشوند؛ متن ⇒ شناسه/نام/کد طرح/رنگ/مشتری/شماره فاکتور.
+     */
+    public function matchOrderStock($data) {
+        check_permission('manage_products');
+        $this->ensureDashboardColumn();
+        send_json($this->buildOrderStockMatch($_SESSION['current_entity_id'], $data));
+    }
+
+    public function buildOrderStockMatch($entity_id, $data) {
+        $tolerance = intval($data['tolerance_cm'] ?? 10);
+        if ($tolerance < 0 || $tolerance > 100) {
+            $tolerance = 10;
+        }
+        $nearRange = 50;
+        $search = trim((string)($data['search'] ?? ''));
+        $searchKind = $search !== '' ? $this->productModel->dimensionSearchKind($search) : '';
+        $needle = $searchKind !== '' ? $this->productModel->normalizeDimensionSearch($search) : '';
+        $target = $searchKind === 'full' || $searchKind === 'named' ? $this->orderMatchSides($search) : null;
+
+        $ordStmt = $this->conn->prepare("
+            SELECT ii.id, ii.product_id, ii.dimensions, ii.status, ii.warehouse_id,
+                   COALESCE(NULLIF(ii.serial_id, ''), CONCAT('INV-', LPAD(ii.id, 6, '0'))) AS serial_id,
+                   p.name AS product_name, p.design_code, p.colorway, w.name AS warehouse_name,
+                   IF(ii.status = 'sold', c.name, NULL) AS customer_name,
+                   IF(ii.status = 'sold', si.invoice_number, NULL) AS sales_invoice_number
+            FROM inventory_items ii
+            INNER JOIN warehouses w ON w.id = ii.warehouse_id AND w.warehouse_type = 'order'
+            INNER JOIN products p ON p.id = ii.product_id
+            LEFT JOIN sales_invoice_items sii ON sii.id = ii.sales_invoice_item_id
+            LEFT JOIN sales_invoices si ON si.id = sii.invoiceId
+            LEFT JOIN customers c ON c.id = si.customerId
+            WHERE ii.entity_id = ? AND ii.status IN ('in_stock', 'returned', 'sold')
+            ORDER BY p.name ASC, ii.serial_id ASC
+        ");
+        $ordStmt->bind_param('i', $entity_id);
+        $ordStmt->execute();
+        $orders = db_stmt_to_assoc_array($ordStmt);
+
+        $stkStmt = $this->conn->prepare("
+            SELECT ii.id, ii.product_id, ii.dimensions, ii.status,
+                   COALESCE(NULLIF(ii.serial_id, ''), CONCAT('INV-', LPAD(ii.id, 6, '0'))) AS serial_id,
+                   p.name AS product_name, p.design_code, p.colorway, w.name AS warehouse_name
+            FROM inventory_items ii
+            INNER JOIN products p ON p.id = ii.product_id
+            LEFT JOIN warehouses w ON w.id = ii.warehouse_id
+            WHERE ii.entity_id = ? AND ii.status IN ('in_stock', 'returned')
+              AND (ii.warehouse_id IS NULL OR ii.warehouse_id = 0 OR w.warehouse_type IS NULL OR w.warehouse_type <> 'order')
+        ");
+        $stkStmt->bind_param('i', $entity_id);
+        $stkStmt->execute();
+        $stock = db_stmt_to_assoc_array($stkStmt);
+        foreach ($stock as &$s) {
+            $s['_sides'] = $this->orderMatchSides($s['dimensions']);
+        }
+        unset($s);
+
+        $tierRank = ['product' => 0, 'design' => 1, 'size' => 2];
+        $result = [];
+        foreach ($orders as $order) {
+            $sides = $this->orderMatchSides($order['dimensions']);
+            if ($target !== null) {
+                $dist = $this->orderMatchDistance($sides, $target);
+                if ($dist === null || $dist > $nearRange) {
+                    continue;
+                }
+                $order['distance_cm'] = $dist;
+            } elseif ($searchKind === 'partial') {
+                if (strpos($this->productModel->normalizeDimensionSearch($order['dimensions']), $needle) !== 0) {
+                    continue;
+                }
+            } elseif ($search !== '') {
+                $hay = mb_strtolower(implode(' ', [$order['serial_id'], $order['product_name'], $order['design_code'], $order['colorway'], $order['customer_name'], $order['sales_invoice_number']]), 'UTF-8');
+                if (mb_strpos($hay, mb_strtolower($search, 'UTF-8')) === false) {
+                    continue;
+                }
+            }
+
+            $matches = [];
+            $counts = ['product' => 0, 'design' => 0, 'size' => 0];
+            $design = mb_strtolower(trim((string)$order['design_code']), 'UTF-8');
+            foreach ($stock as $s) {
+                $diff = $this->orderMatchDistance($sides, $s['_sides']);
+                if ($diff === null || $diff > $tolerance) {
+                    continue;
+                }
+                if (intval($s['product_id']) === intval($order['product_id'])) {
+                    $tier = 'product';
+                } elseif ($design !== '' && mb_strtolower(trim((string)$s['design_code']), 'UTF-8') === $design) {
+                    $tier = 'design';
+                } else {
+                    $tier = 'size';
+                }
+                $counts[$tier]++;
+                $m = $s;
+                unset($m['_sides'], $m['product_id']);
+                $m['diff_cm'] = $diff;
+                $m['tier'] = $tier;
+                $matches[] = $m;
+            }
+            usort($matches, function ($a, $b) use ($tierRank) {
+                return [$tierRank[$a['tier']], $a['diff_cm'], $a['serial_id']] <=> [$tierRank[$b['tier']], $b['diff_cm'], $b['serial_id']];
+            });
+            $order['matches'] = array_slice($matches, 0, 30);
+            $order['match_counts'] = $counts;
+            unset($order['product_id']);
+            $result[] = $order;
+        }
+
+        if ($target !== null) {
+            usort($result, function ($a, $b) {
+                return [$a['distance_cm'], $a['serial_id']] <=> [$b['distance_cm'], $b['serial_id']];
+            });
+        }
+
+        // نزدیک‌ترین فرش‌های انبار فیزیکی به سایز جستجوشده
+        $stockNearest = [];
+        if ($target !== null) {
+            foreach ($stock as $s) {
+                $diff = $this->orderMatchDistance($s['_sides'], $target);
+                if ($diff === null || $diff > $nearRange) {
+                    continue;
+                }
+                unset($s['_sides'], $s['product_id']);
+                $s['diff_cm'] = $diff;
+                $stockNearest[] = $s;
+            }
+            usort($stockNearest, function ($a, $b) {
+                return [$a['diff_cm'], $a['serial_id']] <=> [$b['diff_cm'], $b['serial_id']];
+            });
+            $stockNearest = array_slice($stockNearest, 0, 30);
+        }
+
+        return [
+            'orders' => $result,
+            'stock_nearest' => $stockNearest,
+            'search_kind' => $search === '' ? '' : ($target !== null ? 'size' : ($searchKind === 'partial' ? 'partial' : 'text')),
+            'tolerance_cm' => $tolerance,
+        ];
+    }
+
+    /** ضلع‌های مرتب‌شده به متر [کوتاه، بلند]، یا نام سایز (پادری) برای تطبیق دقیق؛ null اگر سایز نامعلوم است. */
+    private function orderMatchSides($dimensions) {
+        $raw = trim((string)$dimensions);
+        if ($raw === '') {
+            return null;
+        }
+        // نام سایز قبل از نرمال‌سازی چک می‌شود؛ «در» داخل «پادری» نباید x شود.
+        if (dimension_sides_meters($this->conn, $raw) === null && dimension_area($this->conn, $raw) > 0) {
+            return mb_strtolower($raw, 'UTF-8');
+        }
+        $sides = dimension_sides_meters($this->conn, $this->productModel->normalizeDimensionSearch($raw));
+        if ($sides === null) {
+            return null;
+        }
+        sort($sides);
+        return $sides;
+    }
+
+    /** اختلاف دو سایز به سانت (بیشترین اختلاف ضلع)، یا null اگر قابل مقایسه نیستند. */
+    private function orderMatchDistance($a, $b) {
+        if ($a === null || $b === null) {
+            return null;
+        }
+        if (is_string($a) || is_string($b)) {
+            return $a === $b ? 0 : null;
+        }
+        return (int)round(max(abs($a[0] - $b[0]), abs($a[1] - $b[1])) * 100);
+    }
+
     public function assignSoldToOrderWarehouse($data) {
         check_permission('manage_products');
         $this->ensureDashboardColumn();

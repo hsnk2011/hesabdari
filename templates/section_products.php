@@ -1,47 +1,55 @@
 <div class="tab-pane fade" id="products" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4><i class="bi bi-box-seam me-2"></i>مدیریت انبار و محصولات</h4>
-        <div class="btn-group">
-            <button class="btn btn-success" id="bulk-print-labels-btn" data-permission-action="manage_products" style="display:none;">
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">انبار و محصولات</h4>
+            <p class="ui-page-sub">کالاها، موجودی هر انبار، کلکسیون‌ها و لیبل‌ها</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-outline-success" id="bulk-print-labels-btn" data-permission-action="manage_products" style="display:none;">
                 <i class="bi bi-printer me-1"></i>چاپ لیبل (<span id="bulk-print-count">0</span>)
             </button>
             <button class="btn btn-outline-primary" id="bulk-transfer-products-btn" data-permission-action="manage_products" style="display:none;">
                 <i class="bi bi-arrow-left-right me-1"></i>انتقال موجودی (<span id="bulk-transfer-count">0</span>)
             </button>
-            <button class="btn btn-outline-success" id="print-all-labels-btn" data-permission-action="manage_products" title="چاپ لیبل تمام محصولات موجود در انبار">
-                <i class="bi bi-printer me-1"></i>چاپ همه لیبل‌ها
-            </button>
-            <button class="btn btn-secondary" id="manage-warehouses-btn" data-permission-action="manage_products">
-                <i class="bi bi-building me-1"></i>انبارها
-            </button>
-            <button class="btn btn-info" id="manage-product-options-btn" data-permission-action="manage_collections">
-                <i class="bi bi-sliders me-1"></i>کلکسیون‌ها
-            </button>
+            <div class="dropdown">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots"></i>بیشتر</button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><button class="dropdown-item" id="manage-warehouses-btn" data-permission-action="manage_products">
+                        <i class="bi bi-building me-2"></i>انبارها
+                    </button></li>
+                    <li><button class="dropdown-item" id="manage-product-options-btn" data-permission-action="manage_collections">
+                        <i class="bi bi-sliders me-2"></i>کلکسیون‌ها
+                    </button></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><button class="dropdown-item" id="print-all-labels-btn" data-permission-action="manage_products" title="چاپ لیبل تمام محصولات موجود در انبار">
+                        <i class="bi bi-printer me-2"></i>چاپ همه لیبل‌ها
+                    </button></li>
+                </ul>
+            </div>
             <button class="btn btn-primary" id="add-product-btn" data-permission-action="manage_products">
-                <i class="bi bi-plus-circle me-1"></i>محصول جدید
+                <i class="bi bi-plus-lg"></i>محصول جدید
             </button>
         </div>
     </div>
-    
-    <div id="products-filter-info" class="mb-2"></div>
-    
-    <!-- فیلترهای پیشرفته (تک‌ردیف) -->
-    <div class="card mb-3">
-        <div class="card-body py-2">
-            <div class="d-flex flex-wrap align-items-center gap-2">
-                <div class="flex-grow-1" style="min-width: 180px;">
-                    <div class="input-group input-group-sm search-box">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="text" class="form-control" id="product-search" placeholder="جستجو در نام، کد طرح، کد رنگ، شناسه انبار...">
-                    </div>
-                </div>
-                <select class="form-select form-select-sm" id="product-collection-filter" style="width: 140px;" title="کلکسیون">
+
+    <div class="ui-panel">
+        <div class="ui-toolbar">
+            <div class="ui-search search-box">
+                <i class="bi bi-search"></i>
+                <input type="text" class="form-control" id="product-search" placeholder="جستجو در نام، کد طرح، کد رنگ، شناسه انبار...">
+            </div>
+            <div class="ui-filter">
+                <select class="form-select" id="product-collection-filter" title="کلکسیون">
                     <option value="">همه کلکسیون‌ها</option>
                 </select>
-                <select class="form-select form-select-sm" id="product-warehouse-filter" style="width: 125px;" title="انبار">
+            </div>
+            <div class="ui-filter">
+                <select class="form-select" id="product-warehouse-filter" title="انبار">
                     <option value="">همه انبارها</option>
                 </select>
-                <select class="form-select form-select-sm" id="product-stock-filter" style="width: 125px;" title="وضعیت موجودی">
+            </div>
+            <div class="ui-filter">
+                <select class="form-select" id="product-stock-filter" title="وضعیت موجودی">
                     <option value="in_stock" selected>موجود</option>
                     <option value="out_of_stock">ناموجود</option>
                     <option value="all">همه وضعیت‌ها</option>
@@ -53,7 +61,9 @@
                     <option value="damaged">آسیب‌دیده</option>
                     <option value="low_stock">کمبود موجودی</option>
                 </select>
-                <select class="form-select form-select-sm" id="product-size-filter" style="width: 140px;" title="متراژ / شکل فرش — از روی ابعاد موجودی انبار">
+            </div>
+            <div class="ui-filter ui-size-filter">
+                <select class="form-select" id="product-size-filter" title="متراژ / شکل فرش — از روی ابعاد موجودی انبار">
                     <option value="">همه متراژها</option>
                     <option value="kenareh" title="نسبت ضلع بلند به کوتاه حداقل ۱.۷۵">کناره</option>
                     <option value="0-2">تا ۲ متری</option>
@@ -68,9 +78,11 @@
                     <option value="12-">بالای ۱۲ متر</option>
                     <option value="custom">بازه دلخواه...</option>
                 </select>
-                <input type="text" inputmode="decimal" class="form-control form-control-sm" id="product-min-area" style="width: 80px;" placeholder="از (م²)" title="حداقل متراژ (مترمربع)">
-                <input type="text" inputmode="decimal" class="form-control form-control-sm" id="product-max-area" style="width: 80px;" placeholder="تا (م²)" title="حداکثر متراژ (مترمربع)">
+                <input type="text" inputmode="decimal" class="form-control" id="product-min-area" style="width: 80px;" placeholder="از (م²)" title="حداقل متراژ (مترمربع)">
+                <input type="text" inputmode="decimal" class="form-control" id="product-max-area" style="width: 80px;" placeholder="تا (م²)" title="حداکثر متراژ (مترمربع)">
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="product-size-clear" title="پاک کردن فیلتر اندازه"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="ui-toolbar-end">
                 <div class="btn-group btn-group-sm" role="group">
                     <button type="button" class="btn btn-outline-secondary active" id="view-table-btn" title="نمای جدولی">
                         <i class="bi bi-list"></i>
@@ -81,44 +93,39 @@
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- نمای جدولی -->
-    <div id="products-table-view">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover" id="products-table">
-                <thead>
-                    <tr>
-                        <th style="width: 40px;"><input type="checkbox" id="select-all-products" title="انتخاب همه"></th>
-                        <th style="width: 60px;">تصویر</th>
-                        <th class="sortable-header" data-sort-by="name">نام محصول <span class="sort-indicator"></span></th>
-                        <th class="sortable-header" data-sort-by="collectionName">کلکسیون<span class="sort-indicator"></span></th>
-                        <th>انبارها</th>
-                        <th class="sortable-header" data-sort-by="total_stock">موجودی <span class="sort-indicator"></span></th>
-                        <th>توضیحات</th>
-                        <th style="width: 140px;">عملیات</th>
-                    </tr>
-                </thead>
-                <tbody id="products-table-body"></tbody>
-            </table>
+        <div id="products-filter-info" class="ui-filter-info"></div>
+        <div id="products-table-view">
+            <div class="table-responsive">
+                <table class="table table-hover" id="products-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"><input type="checkbox" id="select-all-products" title="انتخاب همه"></th>
+                            <th style="width: 60px;">تصویر</th>
+                            <th class="sortable-header" data-sort-by="name">نام محصول <span class="sort-indicator"></span></th>
+                            <th class="sortable-header" data-sort-by="collectionName">کلکسیون<span class="sort-indicator"></span></th>
+                            <th>انبارها</th>
+                            <th class="sortable-header" data-sort-by="total_stock">موجودی <span class="sort-indicator"></span></th>
+                            <th>توضیحات</th>
+                            <th style="width: 140px;">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="products-table-body"></tbody>
+                </table>
+            </div>
         </div>
-    </div>
-    
-    <!-- نمای کارتی -->
-    <div id="products-card-view" class="row g-3" style="display: none;"></div>
-    
-    <div class="d-flex justify-content-between align-items-center mt-3">
-        <div class="d-flex align-items-center gap-2">
-            <label class="text-muted small">نمایش:</label>
-            <select class="form-select form-select-sm pagination-limit-select" id="products-limit-select" data-table="products" style="width: auto;">
-                <option value="12">12</option>
-                <option value="24" selected>24</option>
-                <option value="48">48</option>
-                <option value="96">96</option>
-                <option value="-1">همه</option>
-            </select>
+        <div id="products-card-view" class="row g-3" style="display: none;"></div>
+        <div class="ui-panel-foot ui-pager-row">
+            <label class="ui-limit" for="products-limit-select">نمایش
+                <select class="form-select form-select-sm pagination-limit-select" id="products-limit-select" data-table="products">
+                    <option value="12">12</option>
+                    <option value="24" selected>24</option>
+                    <option value="48">48</option>
+                    <option value="96">96</option>
+                    <option value="-1">همه</option>
+                </select>
+            ردیف</label>
+            <div class="pagination-container" data-table="products"></div>
         </div>
-        <div class="pagination-container" data-table="products"></div>
     </div>
 </div>
 

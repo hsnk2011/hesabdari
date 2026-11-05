@@ -40,6 +40,8 @@ function get_full_schema() {
                 '`name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
                 '`type` enum(\'machine\',\'handmade\') COLLATE utf8mb4_unicode_ci NOT NULL',
                 '`price_per_meter` decimal(15,2) NOT NULL DEFAULT 0.00',
+                // قیمت همکاری هر متر؛ NULL = قیمت فروش منهای درصد همکاری لینک
+                '`partner_price_per_meter` decimal(15,2) DEFAULT NULL',
                 '`entity_id` int(11) NOT NULL',
                 '`updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()',
             ],
@@ -302,6 +304,7 @@ function get_full_schema() {
                 '`design_code` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
                 '`colorway` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
                 '`price` decimal(15,2) DEFAULT NULL',
+                '`partner_price` decimal(15,2) DEFAULT NULL',
                 '`min_stock` int(11) DEFAULT NULL',
                 '`max_stock` int(11) DEFAULT NULL',
                 '`reorder_point` int(11) DEFAULT NULL',
@@ -839,6 +842,31 @@ function get_full_schema() {
                 'UNIQUE KEY `idx_token` (`token`)',
                 'KEY `idx_invoice` (`invoice_type`, `invoice_id`)',
                 'KEY `idx_expires` (`expires_at`)',
+            ]
+        ],
+        // لینک عمومی موجودی برای همکاران (stock.php?c=...): بدون انقضا تا باطل شود.
+        'stock_share_links' => [
+            'columns' => [
+                '`id` int(11) NOT NULL AUTO_INCREMENT',
+                '`entity_id` int(11) NOT NULL',
+                '`token` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL',
+                '`title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL',
+                "`price_mode` enum('sale','partner','none') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'sale'",
+                '`partner_discount_pct` decimal(5,2) NOT NULL DEFAULT 0.00',
+                '`filters` text COLLATE utf8mb4_unicode_ci DEFAULT NULL',
+                '`show_serials` tinyint(1) NOT NULL DEFAULT 1',
+                '`show_counts` tinyint(1) NOT NULL DEFAULT 1',
+                '`created_by` int(11) DEFAULT NULL',
+                '`created_at` timestamp NOT NULL DEFAULT current_timestamp()',
+                '`updated_at` timestamp NULL DEFAULT NULL',
+                '`revoked_at` datetime DEFAULT NULL',
+                '`last_viewed_at` datetime DEFAULT NULL',
+                '`view_count` int(11) NOT NULL DEFAULT 0',
+            ],
+            'constraints' => [
+                'PRIMARY KEY (`id`)',
+                'UNIQUE KEY `idx_token` (`token`)',
+                'KEY `idx_entity` (`entity_id`)',
             ]
         ],
         'sms_logs' => [

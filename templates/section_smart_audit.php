@@ -1,16 +1,19 @@
 <!-- templates/section_smart_audit.php — Smart Audit Center v2 -->
 <div class="tab-pane fade" id="section-smart-audit" role="tabpanel" aria-labelledby="smart-audit-tab">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h2 class="mb-0"><i class="bi bi-robot me-2"></i>مرکز حسابرسی هوشمند</h2>
-        <div class="d-flex flex-wrap gap-2">
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">حسابرس هوشمند</h4>
+            <p class="ui-page-sub">بررسی خودکار داده‌ها برای پیدا کردن ناهماهنگی، رکوردهای ناقص و خطاهای ثبت</p>
+        </div>
+        <div class="ui-page-actions">
             <button type="button" class="btn btn-outline-secondary" id="audit-export-excel-btn">
-                <i class="bi bi-file-earmark-excel me-1"></i>خروجی Excel
+                <i class="bi bi-file-earmark-excel"></i>خروجی Excel
             </button>
             <button type="button" class="btn btn-outline-secondary" id="audit-compare-btn">
-                <i class="bi bi-diagram-3 me-1"></i>مقایسه با قبل
+                <i class="bi bi-diagram-3"></i>مقایسه با قبل
             </button>
             <button type="button" class="btn btn-primary" id="audit-run-btn">
-                <i class="bi bi-play-fill me-1"></i>شروع حسابرسی
+                <i class="bi bi-play-fill"></i>شروع حسابرسی
             </button>
         </div>
     </div>
@@ -75,7 +78,7 @@
                     هنوز حسابرسی انجام نشده. روی «شروع حسابرسی» کلیک کنید.
                 </div>
                 <div id="audit-content" style="display:none;">
-                    <div id="audit-bulk-actions" class="alert alert-info d-flex justify-content-between align-items-center mb-3" style="display:none !important;">
+                    <div id="audit-bulk-actions" class="alert alert-info d-flex justify-content-between align-items-center mb-3 d-none">
                         <div><span class="fw-bold" id="selected-count">0</span> مورد انتخاب شده</div>
                         <button type="button" class="btn btn-sm btn-outline-danger" id="audit-ignore-selected-btn">
                             <i class="bi bi-eye-slash me-1"></i>نادیده گرفتن

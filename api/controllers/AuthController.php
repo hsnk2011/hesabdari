@@ -2,6 +2,7 @@
 // /api/controllers/AuthController.php
 
 require_once __DIR__ . '/../models/User.php';
+require_once __DIR__ . '/../core/ui_theme.php';
 
 /**
  * The AuthController handles all requests related to user authentication and management.
@@ -67,6 +68,7 @@ class AuthController {
                     'permissions' => $_SESSION['permissions'],
                     'allowed_entities' => $_SESSION['allowed_entities'],
                     'session_expires_at' => get_session_expires_at(),
+                    'ui' => ui_theme_info($this->conn, (int)$_SESSION['user_id']),
                 ]);
             } else {
                 send_json(['error' => $result['error']], $result['statusCode'] ?? 401);
@@ -132,6 +134,7 @@ class AuthController {
                     'allowed_entities' => $_SESSION['allowed_entities'] ?? [],
                     'session_expires_at' => get_session_expires_at(),
                     'csrf_token' => $_SESSION['csrf_token'],
+                    'ui' => ui_theme_info($this->conn, (int)$_SESSION['user_id']),
                 ]);
             } else {
                 send_json(['loggedIn' => false]);

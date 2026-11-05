@@ -37,6 +37,10 @@ const AppConfig = {
         LAST_ONLINE: 'hesab_last_online',
         TX_INCLUDE_UNCASHED: 'hesabdari_tx_include_uncashed',
         PERSON_COLS_PREFIX: 'hesabdari_person_cols_',
+        DASHBOARD_SALES_PERIOD: 'hesabdari_dashboard_sales_period',
+        DASHBOARD_ORDER_TOLERANCE: 'hesabdari_dashboard_order_tolerance',
+        // Card/list view on the public stock page (stock.php uses the same literal).
+        STOCK_SHARE_VIEW: 'hesabdari_stock_share_view',
     },
 
     // ---- Shared UI timings (ms) ----

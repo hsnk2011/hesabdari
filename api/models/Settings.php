@@ -148,6 +148,7 @@ class Settings extends BaseModel {
         'bank_import_common_fees',
         'bank_import_fee_cap_ratio',
         'pwa_theme_color',
+        'ui_default_theme',
         'invoice_price_history_enabled',
         'invoice_price_history_similar',
         'invoice_price_history_person_prefer',
@@ -168,6 +169,7 @@ class Settings extends BaseModel {
         'negative_stock_policy' => ['allow', 'warn', 'block'],
         'credit_limit_policy' => ['warn', 'off', 'block'],
         'cron_mode' => ['request', 'external'],
+        'ui_default_theme' => ['nili', 'firoozeh', 'kaghazi', 'shab', 'auto', 'classic'],
     ];
 
     // Whole-number settings: [min, max].

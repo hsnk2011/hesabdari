@@ -1,0 +1,210 @@
+/* =================================================================
+   Redesigned UI — design tokens («قالب‌ها»)
+   Every colour, shadow and radius of the redesigned UI comes from these
+   --ui-* variables; a theme only re-defines them. Bootstrap's own --bs-*
+   variables are fed from the same tokens so every Bootstrap component
+   follows the theme.
+   html[data-ui="modern"][data-ui-mode="nili|firoozeh|kaghazi|shab"]
+   ================================================================= */
+
+/* Digits only (Persian, Arabic and Latin digits and number separators): one
+   weight heavier and a little larger than Vazirmatn's own, which read small
+   next to the letters. Letters keep the normal Vazirmatn faces. */
+@font-face {
+    font-family: 'UiDigits';
+    src: url('../../fonts/Vazirmatn-Medium.woff2') format('woff2');
+    font-weight: 100 450;
+    font-display: swap;
+    size-adjust: 110%;
+    unicode-range: U+0030-0039, U+002C, U+002E, U+0660-066C, U+06F0-06F9;
+}
+@font-face {
+    font-family: 'UiDigits';
+    src: url('../../fonts/Vazirmatn-Bold.woff2') format('woff2');
+    font-weight: 451 900;
+    font-display: swap;
+    size-adjust: 110%;
+    unicode-range: U+0030-0039, U+002C, U+002E, U+0660-066C, U+06F0-06F9;
+}
+
+html[data-ui="modern"] {
+    /* نیلی (default) */
+    --ui-bg: #e9ecf4;
+    --ui-surface: #ffffff;
+    --ui-surface-2: #f5f6fb;
+    --ui-surface-3: #eceef6;
+    --ui-border: #dadeea;
+    --ui-border-strong: #c8cddd;
+    --ui-text: #1f2333;
+    --ui-text-2: #5d6378;
+    --ui-text-3: #8a90a4;
+    --ui-accent: #4f46e5;
+    --ui-accent-rgb: 79, 70, 229;
+    --ui-accent-hover: #4338ca;
+    --ui-accent-soft: #eef0ff;
+    --ui-accent-soft-2: #dfe2ff;
+    --ui-on-accent: #ffffff;
+
+    --ui-nav-bg: #1e1b4b;
+    --ui-nav-text: #c9c8f0;
+    --ui-nav-text-active: #ffffff;
+    --ui-nav-active-bg: rgba(255, 255, 255, .13);
+    --ui-nav-hover-bg: rgba(255, 255, 255, .07);
+    --ui-nav-border: rgba(255, 255, 255, .08);
+
+    --ui-success: #16a34a;
+    --ui-success-rgb: 22, 163, 74;
+    --ui-success-soft: #e8f7ee;
+    --ui-danger: #dc2626;
+    --ui-danger-rgb: 220, 38, 38;
+    --ui-danger-soft: #fdecec;
+    --ui-warning: #c27803;
+    --ui-warning-rgb: 194, 120, 3;
+    --ui-warning-soft: #fdf3e1;
+    --ui-info: #0284c7;
+    --ui-info-rgb: 2, 132, 199;
+    --ui-info-soft: #e5f4fc;
+
+    --ui-shadow-sm: 0 1px 2px rgba(20, 24, 50, .07), 0 2px 8px rgba(20, 24, 50, .05);
+    --ui-shadow: 0 1px 3px rgba(20, 24, 50, .08), 0 6px 18px rgba(20, 24, 50, .07);
+    --ui-shadow-lg: 0 12px 40px rgba(20, 24, 50, .18);
+    --ui-focus: 0 0 0 3px rgba(var(--ui-accent-rgb), .22);
+    --ui-overlay: rgba(15, 18, 36, .45);
+
+    --ui-radius-sm: 7px;
+    --ui-radius: 10px;
+    --ui-radius-lg: 14px;
+    --ui-gap: 16px;
+    --ui-font: 'UiDigits', 'Vazirmatn', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+    color-scheme: light;
+}
+
+/* فیروزه‌ای */
+html[data-ui="modern"][data-ui-mode="firoozeh"] {
+    --ui-bg: #e4eeeb;
+    --ui-surface-2: #f3f8f7;
+    --ui-surface-3: #e6f0ee;
+    --ui-border: #d2e2de;
+    --ui-border-strong: #bcd2cd;
+    --ui-text: #15302c;
+    --ui-text-2: #52716c;
+    --ui-text-3: #7f9893;
+    --ui-accent: #0f766e;
+    --ui-accent-rgb: 15, 118, 110;
+    --ui-accent-hover: #0b5f58;
+    --ui-accent-soft: #e2f3f0;
+    --ui-accent-soft-2: #c9e8e3;
+    --ui-nav-bg: #0f2e2b;
+    --ui-nav-text: #b3d5cf;
+}
+
+/* کاغذی */
+html[data-ui="modern"][data-ui-mode="kaghazi"] {
+    --ui-bg: #ece3d2;
+    --ui-surface: #fffdf8;
+    --ui-surface-2: #f9f4ea;
+    --ui-surface-3: #f1e9da;
+    --ui-border: #e0d3bb;
+    --ui-border-strong: #cfbe9f;
+    --ui-text: #2b2418;
+    --ui-text-2: #6b5f4b;
+    --ui-text-3: #93876f;
+    --ui-accent: #1e3a8a;
+    --ui-accent-rgb: 30, 58, 138;
+    --ui-accent-hover: #172f72;
+    --ui-accent-soft: #e8edf8;
+    --ui-accent-soft-2: #d3dcf2;
+    --ui-nav-bg: #fffdf8;
+    --ui-nav-text: #5f5444;
+    --ui-nav-text-active: #1e3a8a;
+    --ui-nav-active-bg: #e8edf8;
+    --ui-nav-hover-bg: #f3ecdf;
+    --ui-nav-border: #e7dcc8;
+    --ui-shadow-sm: 0 1px 2px rgba(60, 45, 20, .08), 0 2px 8px rgba(60, 45, 20, .05);
+    --ui-shadow: 0 1px 3px rgba(60, 45, 20, .06), 0 4px 14px rgba(60, 45, 20, .05);
+    --ui-shadow-lg: 0 12px 40px rgba(60, 45, 20, .18);
+    --ui-radius-sm: 5px;
+    --ui-radius: 8px;
+    --ui-radius-lg: 10px;
+}
+
+/* شب (تاریک) */
+html[data-ui="modern"][data-ui-mode="shab"] {
+    --ui-bg: #090d14;
+    --ui-surface: #171f2e;
+    --ui-surface-2: #1c2536;
+    --ui-surface-3: #243046;
+    --ui-border: #2a3549;
+    --ui-border-strong: #38465f;
+    --ui-text: #e5e9f2;
+    --ui-text-2: #a3acc0;
+    --ui-text-3: #7a849a;
+    --ui-accent: #7c8cff;
+    --ui-accent-rgb: 124, 140, 255;
+    --ui-accent-hover: #95a2ff;
+    --ui-accent-soft: #222a47;
+    --ui-accent-soft-2: #2c3660;
+    --ui-on-accent: #0b1020;
+    --ui-nav-bg: #0a0e16;
+    --ui-nav-text: #8f99b0;
+    --ui-nav-text-active: #ffffff;
+    --ui-nav-active-bg: #1f2740;
+    --ui-nav-hover-bg: #161d2e;
+    --ui-nav-border: #1b2232;
+    --ui-success: #34d399;
+    --ui-success-rgb: 52, 211, 153;
+    --ui-success-soft: #13302a;
+    --ui-danger: #f87171;
+    --ui-danger-rgb: 248, 113, 113;
+    --ui-danger-soft: #3a1d23;
+    --ui-warning: #fbbf24;
+    --ui-warning-rgb: 251, 191, 36;
+    --ui-warning-soft: #362c12;
+    --ui-info: #38bdf8;
+    --ui-info-rgb: 56, 189, 248;
+    --ui-info-soft: #112d3d;
+    --ui-shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);
+    --ui-shadow: 0 1px 3px rgba(0, 0, 0, .35), 0 4px 14px rgba(0, 0, 0, .25);
+    --ui-shadow-lg: 0 14px 44px rgba(0, 0, 0, .55);
+    --ui-overlay: rgba(0, 0, 0, .6);
+    color-scheme: dark;
+}
+
+/* ---- Bootstrap variables fed from the tokens ---- */
+html[data-ui="modern"],
+html[data-ui="modern"][data-bs-theme] {
+    --bs-body-font-family: var(--ui-font);
+    --bs-body-font-size: .9rem;
+    --bs-body-line-height: 1.6;
+    --bs-body-bg: var(--ui-bg);
+    --bs-body-color: var(--ui-text);
+    --bs-emphasis-color: var(--ui-text);
+    --bs-secondary-color: var(--ui-text-2);
+    --bs-tertiary-color: var(--ui-text-3);
+    --bs-secondary-bg: var(--ui-surface-3);
+    --bs-tertiary-bg: var(--ui-surface-2);
+    --bs-border-color: var(--ui-border);
+    --bs-border-color-translucent: var(--ui-border);
+    --bs-border-radius: var(--ui-radius-sm);
+    --bs-border-radius-sm: 6px;
+    --bs-border-radius-lg: var(--ui-radius);
+    --bs-border-radius-xl: var(--ui-radius-lg);
+    --bs-heading-color: var(--ui-text);
+    --bs-link-color: var(--ui-accent);
+    --bs-link-hover-color: var(--ui-accent-hover);
+    --bs-link-color-rgb: var(--ui-accent-rgb);
+    --bs-primary: var(--ui-accent);
+    --bs-primary-rgb: var(--ui-accent-rgb);
+    --bs-success: var(--ui-success);
+    --bs-success-rgb: var(--ui-success-rgb);
+    --bs-danger: var(--ui-danger);
+    --bs-danger-rgb: var(--ui-danger-rgb);
+    --bs-warning: var(--ui-warning);
+    --bs-warning-rgb: var(--ui-warning-rgb);
+    --bs-info: var(--ui-info);
+    --bs-info-rgb: var(--ui-info-rgb);
+    --bs-box-shadow: var(--ui-shadow);
+    --bs-box-shadow-sm: var(--ui-shadow-sm);
+    --bs-box-shadow-lg: var(--ui-shadow-lg);
+}

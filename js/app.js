@@ -61,9 +61,17 @@ const App = (function () {
     // Show/hide by permission. The perm-hidden class (display:none !important) is
     // needed because Bootstrap display utilities such as d-md-block are
     // !important too and would otherwise keep a hidden element visible.
+    // An allowed element is shown again only if a permission hid it: elements a
+    // section hides itself (e.g. the product bulk buttons until rows are ticked)
+    // keep their own state.
     function setPermissionVisible($el, allowed) {
-        $el.toggleClass('perm-hidden', !allowed);
-        if (allowed) $el.show(); else $el.hide();
+        $el.each(function () {
+            const $one = $(this);
+            const hiddenByPermission = $one.hasClass('perm-hidden');
+            $one.toggleClass('perm-hidden', !allowed);
+            if (!allowed) $one.hide();
+            else if (hiddenByPermission) $one.show();
+        });
     }
 
     function applyPermissions() {
@@ -97,14 +105,17 @@ const App = (function () {
 
         // Start page: the dashboard when allowed, otherwise the first section the user may open.
         const activeTabButton = $('#mainTab .nav-link.active, #mainTab .dropdown-item.active');
-        const activeHidden = !activeTabButton.length || activeTabButton.closest('li').hasClass('perm-hidden') || activeTabButton.closest('li').is(':hidden');
+        // A section inside a closed group menu is :hidden but still open-able: judge by its own item.
+        const activeItem = activeTabButton.closest('li');
+        const activeHidden = !activeTabButton.length || activeItem.hasClass('perm-hidden') || activeItem.css('display') === 'none';
         $('#no-access-notice').remove();
         if (activeHidden || (activeTabButton.attr('id') === 'dashboard-tab' && !hasPermission('view_dashboard'))) {
             if (hasPermission('view_dashboard')) {
                 $('#dashboard-tab').tab('show');
             } else {
                 const first = $('#mainTab > li').not('.perm-hidden').filter(function () { return $(this).css('display') !== 'none'; })
-                    .find('button[data-bs-toggle="tab"]').first();
+                    .find('button[data-bs-toggle="tab"]')
+                    .filter(function () { return !$(this).closest('li').hasClass('perm-hidden'); }).first();
                 if (first.length) {
                     first.tab('show');
                 } else {

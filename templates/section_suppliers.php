@@ -1,49 +1,56 @@
 <div class="tab-pane fade" id="suppliers" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h4 class="mb-0">مدیریت تأمین‌کنندگان</h4>
-        <button class="btn btn-primary" id="add-supplier-btn"><i class="bi bi-plus-circle me-2"></i>افزودن تأمین‌کننده جدید</button>
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">تأمین‌کنندگان</h4>
+            <p class="ui-page-sub">مانده حساب، خریدها و پرداخت‌های هر تأمین‌کننده</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-primary" id="add-supplier-btn"><i class="bi bi-plus-lg"></i>تأمین‌کننده جدید</button>
+        </div>
     </div>
-    <div id="suppliers-filter-info"></div>
-    <div class="row g-2 align-items-center mb-3">
-        <div class="col-md-5">
-            <div class="input-group search-box">
-                <span class="input-group-text"><i class="bi bi-search"></i></span>
+
+    <div class="ui-panel">
+        <div class="ui-toolbar">
+            <div class="ui-search search-box">
+                <i class="bi bi-search"></i>
                 <input type="text" class="form-control" id="supplier-search" placeholder="جستجو در نام، تلفن، کد اقتصادی...">
             </div>
-        </div>
-        <div class="col-md-2">
-            <select class="form-select pagination-limit-select" id="suppliers-limit-select" data-table="suppliers">
-                <option value="10">10 ردیف</option>
-                <option value="15">15 ردیف</option>
-                <option value="25" selected>25 ردیف</option>
-                <option value="50">50 ردیف</option>
-                <option value="100">100 ردیف</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select class="form-select" id="suppliers-balance-filter">
-                <option value="">همه وضعیت‌ها</option>
-                <option value="positive">فقط بستانکار (بدهی ما)</option>
-                <option value="negative">فقط بدهکار (طلب ما)</option>
-                <option value="settled">تسویه‌شده</option>
-            </select>
-        </div>
-        <div class="col-md-2 text-end">
-            <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="bi bi-layout-three-columns me-1"></i>ستون‌ها
-                </button>
-                <div class="dropdown-menu dropdown-menu-end p-2 shadow" id="suppliers-column-menu" style="min-width: 220px;"></div>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="suppliers-balance-filter"><i class="bi bi-funnel"></i></label>
+                <select class="form-select" id="suppliers-balance-filter">
+                    <option value="">همه وضعیت‌ها</option>
+                    <option value="positive">فقط بستانکار (بدهی ما)</option>
+                    <option value="negative">فقط بدهکار (طلب ما)</option>
+                    <option value="settled">تسویه‌شده</option>
+                </select>
+            </div>
+            <div class="ui-toolbar-end">
+                <label class="ui-limit" for="suppliers-limit-select">نمایش
+                    <select class="form-select pagination-limit-select form-select-sm" id="suppliers-limit-select" data-table="suppliers">
+                        <option value="10">10</option>
+                        <option value="15">15</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                ردیف</label>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle btn-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-layout-three-columns"></i> ستون‌ها
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end p-2 shadow" id="suppliers-column-menu" style="min-width: 220px;"></div>
+                </div>
             </div>
         </div>
+        <div id="suppliers-filter-info" class="ui-filter-info"></div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="suppliers-table">
+                <thead><tr></tr></thead>
+                <tbody id="suppliers-table-body"></tbody>
+            </table>
+        </div>
+        <div class="pagination-container" data-table="suppliers"></div>
     </div>
-    <div class="table-responsive">
-        <table class="table table-striped table-hover" id="suppliers-table">
-            <thead><tr></tr></thead>
-            <tbody id="suppliers-table-body"></tbody>
-        </table>
-    </div>
-    <div class="pagination-container" data-table="suppliers"></div>
 </div>
 
 <div class="modal fade" id="supplierModal" tabindex="-1">

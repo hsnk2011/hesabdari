@@ -978,21 +978,21 @@ class Check extends BaseModel {
             return ['error' => 'گروه انتقال برای این چک یافت نشد.', 'statusCode' => 404];
         }
 
-        $stmt = $this->conn->prepare(
-            "SELECT p.id AS payment_id, p.date AS transfer_date, p.description, p.person_id, p.person_type,
-                    p.amount AS transfer_amount, p.transfer_group_id,
-                    c.id, c.checkNumber, c.bankName, c.issuerName, c.dueDate, c.amount, c.status, c.type
-             FROM payments p
-             INNER JOIN checks c ON c.id = p.checkId AND c.entity_id = p.entity_id
-             WHERE p.entity_id = ? AND p.type = 'endorse_check' AND p.transfer_group_id = ?
-             ORDER BY c.dueDate ASC, c.id ASC"
-        );
-        $stmt->bind_param('is', $entity_id, $groupId);
-        $stmt->execute();
-        $rows = db_stmt_to_assoc_array($stmt);
+        $rows = $this->transferGroupRows($groupId, (int)$entity_id);
         if (empty($rows)) {
             return ['error' => 'چک‌های این گروه انتقال یافت نشد.', 'statusCode' => 404];
         }
+        // A check returned and later re-added has two rows; show only its latest.
+        $latest = [];
+        foreach ($rows as $row) {
+            $cid = (int)$row['id'];
+            if (!isset($latest[$cid]) || (int)$row['payment_id'] > (int)$latest[$cid]['payment_id']) {
+                $latest[$cid] = $row;
+            }
+        }
+        $rows = array_values(array_filter($rows, function ($row) use ($latest) {
+            return (int)$latest[(int)$row['id']]['payment_id'] === (int)$row['payment_id'];
+        }));
 
         $personTableMap = [
             'customer' => 'customers',
@@ -1050,6 +1050,9 @@ class Check extends BaseModel {
                 'status' => $row['status'],
                 'status_label' => $statusLabels[$row['status']] ?? $row['status'],
                 'type' => $row['type'],
+                'reversed' => (int)$row['reversed'] > 0,
+                // Only a check still held by the destination can be taken out of the group.
+                'removable' => (int)$row['reversed'] === 0 && $row['status'] === 'endorsed',
             ];
         }
 
@@ -1058,6 +1061,7 @@ class Check extends BaseModel {
             'transfer_group_id' => $groupId,
             'transfer_date' => $first['transfer_date'],
             'description' => $first['description'],
+            'common_description' => $this->transferGroupCommonDescription($rows),
             'transferredTo' => [
                 'person_id' => $pid ?: null,
                 'person_type' => $pt,
@@ -1069,6 +1073,187 @@ class Check extends BaseModel {
             'checkCount' => count($checks),
             'totalAmount' => $totalAmount,
         ];
+    }
+
+    /** Endorse rows of a transfer group joined with their checks; `reversed` > 0 when returned/bounced. */
+    private function transferGroupRows($groupId, $entityId, $forUpdate = false) {
+        $stmt = $this->conn->prepare(
+            "SELECT p.id AS payment_id, p.date AS transfer_date, p.description, p.person_id, p.person_type,
+                    p.amount AS transfer_amount, p.transfer_group_id,
+                    c.id, c.checkNumber, c.bankName, c.issuerName, c.dueDate, c.amount, c.status, c.type,
+                    (SELECT COUNT(*) FROM payments r WHERE r.reversal_of_payment_id = p.id AND r.entity_id = p.entity_id) AS reversed
+             FROM payments p
+             INNER JOIN checks c ON c.id = p.checkId AND c.entity_id = p.entity_id
+             WHERE p.entity_id = ? AND p.type = 'endorse_check' AND p.transfer_group_id = ?
+             ORDER BY c.dueDate ASC, c.id ASC" . ($forUpdate ? ' FOR UPDATE' : '')
+        );
+        $stmt->bind_param('is', $entityId, $groupId);
+        $stmt->execute();
+        return db_stmt_to_assoc_array($stmt);
+    }
+
+    /** "(تنزیل: …)" suffix that ras-giri appends to each row's description. */
+    private static function discountSuffixOf($description) {
+        return preg_match('/ \(تنزیل: [\d,]+ تومان\)$/u', (string)$description, $m) ? $m[0] : '';
+    }
+
+    private static function defaultTransferDescription($checkNumber, $personName) {
+        return "راس‌گیری و انتقال چک {$checkNumber} به {$personName}";
+    }
+
+    /**
+     * The description the user typed for the whole group, without per-check
+     * discount suffixes. '' when rows carry the auto-generated per-check text.
+     */
+    private function transferGroupCommonDescription(array $rows) {
+        $common = null;
+        foreach ($rows as $row) {
+            $desc = (string)$row['description'];
+            $suffix = self::discountSuffixOf($desc);
+            if ($suffix !== '') {
+                $desc = mb_substr($desc, 0, mb_strlen($desc) - mb_strlen($suffix));
+            }
+            if (mb_strpos($desc, "راس‌گیری و انتقال چک {$row['checkNumber']} به ") === 0) {
+                $desc = '';
+            }
+            if ($common === null) {
+                $common = $desc;
+            } elseif ($common !== $desc) {
+                return (string)$rows[0]['description'];
+            }
+        }
+        return (string)$common;
+    }
+
+    /**
+     * Edit a ras-giri / group transfer after it was saved: take checks out of
+     * the group (they return to «نزد ما»), add «نزد ما» checks to it, and/or
+     * rewrite the shared description. $description === null leaves it as is;
+     * '' restores the auto-generated per-check text.
+     * The discount expense recorded at transfer time is not touched.
+     */
+    public function updateTransferGroup($groupId, $description, array $addCheckIds, array $removeCheckIds) {
+        $entity_id = (int)($_SESSION['current_entity_id'] ?? 0);
+        if (!$entity_id) {
+            return ['error' => 'نشست کاربر نامعتبر است.', 'statusCode' => 401];
+        }
+        $groupId = trim((string)$groupId);
+        if ($groupId === '') {
+            return ['error' => 'شناسه گروه انتقال الزامی است.', 'statusCode' => 400];
+        }
+        $removeCheckIds = array_values(array_unique(array_filter(array_map('intval', $removeCheckIds))));
+        $addCheckIds = array_values(array_diff(array_unique(array_filter(array_map('intval', $addCheckIds))), $removeCheckIds));
+        $description = $description === null ? null : trim((string)$description);
+
+        require_once __DIR__ . '/Payment.php';
+        $paymentModel = new Payment($this->conn);
+        $paymentModel->ensureTransferGroupColumn();
+
+        $this->conn->begin_transaction();
+        try {
+            $rows = $this->transferGroupRows($groupId, $entity_id, true);
+            if (empty($rows)) {
+                throw new Exception('گروه انتقال یافت نشد.', 404);
+            }
+            $first = $rows[0];
+            $transferDate = $first['transfer_date'];
+            $personId = (int)$first['person_id'];
+            $personType = (string)$first['person_type'];
+            assert_transaction_date_editable($this->conn, $entity_id, $transferDate);
+
+            $personTableMap = ['customer' => 'customers', 'supplier' => 'suppliers', 'partner' => 'partners', 'contact' => 'contacts'];
+            $personName = '';
+            if (isset($personTableMap[$personType])) {
+                $ps = $this->conn->prepare("SELECT name FROM `{$personTableMap[$personType]}` WHERE id = ? AND entity_id = ?");
+                $ps->bind_param('ii', $personId, $entity_id);
+                $ps->execute();
+                $personName = (string)(db_stmt_to_assoc_array($ps)[0]['name'] ?? '');
+            }
+            $commonDescription = $description ?? $this->transferGroupCommonDescription($rows);
+
+            $active = [];
+            foreach ($rows as $row) {
+                if ((int)$row['reversed'] === 0) {
+                    $active[(int)$row['id']] = $row;
+                }
+            }
+
+            $removed = [];
+            foreach ($removeCheckIds as $cid) {
+                $row = $active[$cid] ?? null;
+                if (!$row) {
+                    throw new Exception("چک با شناسه {$cid} در این گروه انتقال فعال نیست (یا قبلاً عودت/برگشت خورده است).", 400);
+                }
+                if ($row['status'] !== 'endorsed') {
+                    throw new Exception("چک {$row['checkNumber']} در وضعیت «{$this->statusLabelFor($row)}» است و نمی‌توان آن را از گروه خارج کرد.", 400);
+                }
+                // Deleting the endorse row also sets the check back to «نزد ما».
+                $paymentModel->delete((int)$row['payment_id'], true, false);
+                unset($active[$cid]);
+                $removed[] = $row['checkNumber'];
+            }
+
+            $added = [];
+            foreach ($addCheckIds as $cid) {
+                if (isset($active[$cid])) {
+                    continue;
+                }
+                $check = $this->lockCheck($cid, $entity_id);
+                if ($check['type'] !== 'received') {
+                    throw new Exception("چک {$check['checkNumber']} از نوع دریافتی نیست.", 400);
+                }
+                if ($check['status'] !== 'in_hand') {
+                    throw new Exception("چک {$check['checkNumber']} در وضعیت 'نزد ما' نیست و قابل افزودن به انتقال نیست.", 400);
+                }
+                $origPay = $this->conn->prepare("SELECT date FROM payments WHERE checkId = ? AND entity_id = ? AND type = 'check' LIMIT 1");
+                $origPay->bind_param('ii', $cid, $entity_id);
+                $origPay->execute();
+                $origPayRow = db_stmt_to_assoc_array($origPay);
+                if (!empty($origPayRow[0]['date'])) {
+                    assert_transaction_date_editable($this->conn, $entity_id, $origPayRow[0]['date']);
+                }
+
+                $upd = $this->conn->prepare("UPDATE checks SET status = 'endorsed' WHERE id = ? AND entity_id = ?");
+                $upd->bind_param('ii', $cid, $entity_id);
+                $upd->execute();
+                $upd->close();
+
+                $desc = $commonDescription !== '' ? $commonDescription : self::defaultTransferDescription($check['checkNumber'], $personName);
+                $amount = (float)$check['amount'];
+                $ins = $this->conn->prepare(
+                    "INSERT INTO payments (entity_id, person_id, person_type, transaction_type, type, amount, date, description, checkId, transfer_group_id)
+                     VALUES (?, ?, ?, 'payment', 'endorse_check', ?, ?, ?, ?, ?)"
+                );
+                $ins->bind_param('iisdssis', $entity_id, $personId, $personType, $amount, $transferDate, $desc, $cid, $groupId);
+                $ins->execute();
+                $ins->close();
+                $added[] = $check['checkNumber'];
+            }
+
+            if ($description !== null) {
+                $updDesc = $this->conn->prepare("UPDATE payments SET description = ? WHERE id = ? AND entity_id = ?");
+                foreach ($active as $row) {
+                    $desc = ($description !== '' ? $description : self::defaultTransferDescription($row['checkNumber'], $personName))
+                        . self::discountSuffixOf($row['description']);
+                    $pid = (int)$row['payment_id'];
+                    $updDesc->bind_param('sii', $desc, $pid, $entity_id);
+                    $updDesc->execute();
+                }
+                $updDesc->close();
+            }
+
+            $this->conn->commit();
+            return [
+                'success' => true,
+                'transfer_group_id' => $groupId,
+                'added' => $added,
+                'removed' => $removed,
+                'remainingCount' => count($active) + count($added),
+            ];
+        } catch (Exception $e) {
+            $this->conn->rollback();
+            return ['error' => $e->getMessage(), 'statusCode' => $this->errorStatus($e)];
+        }
     }
 
     /**

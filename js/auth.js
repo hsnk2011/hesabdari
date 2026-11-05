@@ -17,6 +17,8 @@ const Auth = (function () {
             UI.showError("خطای راه‌اندازی برنامه. لطفاً صفحه را رفرش کنید.");
             return;
         }
+        // The user's theme may need the other template set (classic/modern): reload into it.
+        if (window.UITheme && UITheme.onSession(sessionData.ui)) return;
         self.currentUser = sessionData.username;
         $('#login-overlay').hide();
         $('.main-container').show();

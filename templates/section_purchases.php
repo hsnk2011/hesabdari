@@ -1,76 +1,75 @@
 <div class="tab-pane fade" id="purchase-invoices" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4>فاکتورهای خرید</h4>
-        <div class="d-flex align-items-center gap-3">
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="purchase-invoices-show-details" data-table="purchase_invoices">
-                <label class="form-check-label" for="purchase-invoices-show-details">نمایش جزییات فاکتور</label>
-            </div>
-            <button class="btn btn-primary" id="add-purchase-invoice-btn"><i class="bi bi-plus-circle me-2"></i>ایجاد فاکتور خرید جدید</button>
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">فاکتورهای خرید</h4>
+            <p class="ui-page-sub">ثبت خرید از تأمین‌کنندگان، ورود کالا به انبار و پیگیری پرداخت‌ها</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-primary" id="add-purchase-invoice-btn"><i class="bi bi-plus-lg"></i>فاکتور خرید جدید</button>
         </div>
     </div>
-    <div id="purchase_invoices-filter-info" class="mb-2"></div>
-     <div class="row align-items-center mb-3">
-        <div class="col-md-4">
-            <div class="input-group search-box">
-                <span class="input-group-text"><i class="bi bi-search"></i></span><input type="text" class="form-control" id="purchase-invoice-search" placeholder="جستجو در شماره فاکتور، نام تأمین‌کننده، نام محصول، ابعاد، شناسه انبار، مبالغ...">
+
+    <div class="ui-panel">
+        <div class="ui-toolbar">
+            <div class="ui-search search-box">
+                <i class="bi bi-search"></i>
+                <input type="text" class="form-control" id="purchase-invoice-search" placeholder="جستجو در شماره فاکتور، نام تأمین‌کننده، نام محصول، ابعاد، شناسه انبار، مبالغ...">
             </div>
-        </div>
-        <div class="col-md-3">
-            <div class="input-group">
-                <label class="input-group-text" for="purchase-delivery-status-filter"><i class="bi bi-funnel"></i></label>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="purchase-delivery-status-filter"><i class="bi bi-truck"></i></label>
                 <select class="form-select delivery-status-filter" id="purchase-delivery-status-filter" data-type="purchase">
-                    <option value="">همه وضعیت‌ها</option>
+                    <option value="">همه وضعیت‌های تحویل</option>
                     <option value="preparing">در حال آماده‌سازی</option>
                     <option value="ready">آماده تحویل</option>
                     <option value="delivered">تحویل شده</option>
                 </select>
             </div>
-        </div>
-        <div class="col-md-3">
-            <div class="input-group">
-                <label class="input-group-text" for="purchase-warehouse-type-filter"><i class="bi bi-building-gear"></i></label>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="purchase-warehouse-type-filter"><i class="bi bi-building-gear"></i></label>
                 <select class="form-select" id="purchase-warehouse-type-filter">
                     <option value="">همه انبارها</option>
                     <option value="order">سفارش به کارخانه</option>
                     <option value="physical">سایر انبارها</option>
                 </select>
             </div>
-        </div>
-        <div class="col-md-2">
-            <div class="input-group">
-                <label class="input-group-text" for="purchase-invoices-limit-select">نمایش</label>
-                <select class="form-select pagination-limit-select" id="purchase-invoices-limit-select" data-table="purchase_invoices">
-                    <option value="10" selected>10</option>
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                    <option value="-1">همه</option>
-                </select>
-                <span class="input-group-text">ردیف</span>
+            <div class="ui-toolbar-end">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="purchase-invoices-show-details" data-table="purchase_invoices">
+                    <label class="form-check-label" for="purchase-invoices-show-details">نمایش اقلام فاکتور</label>
+                </div>
+                <label class="ui-limit" for="purchase-invoices-limit-select">نمایش
+                    <select class="form-select pagination-limit-select form-select-sm" id="purchase-invoices-limit-select" data-table="purchase_invoices">
+                        <option value="10" selected>10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="-1">همه</option>
+                    </select>
+                ردیف</label>
             </div>
         </div>
+        <div id="purchase_invoices-filter-info" class="ui-filter-info"></div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="purchase-invoices-table">
+                <thead>
+                    <tr>
+                        <th class="sortable-header" data-sort-by="id"># <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="date">تاریخ <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="supplierName">تأمین‌کننده <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="totalAmount">مبلغ کل <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="discount">تخفیف<span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="paidAmount">مبلغ پرداختی <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-sort-by="remainingAmount">مبلغ باقی‌مانده <span class="sort-indicator"></span></th>
+                        <th>وضعیت پرداخت</th>
+                        <th>وضعیت تحویل</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="purchase-invoices-table-body"></tbody>
+            </table>
+        </div>
+        <div class="pagination-container" data-table="purchase-invoices"></div>
     </div>
-    <div class="table-responsive">
-        <table class="table table-striped table-hover" id="purchase-invoices-table">
-            <thead>
-                <tr>
-                    <th class="sortable-header" data-sort-by="id"># <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="date">تاریخ <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="supplierName">تأمین‌کننده <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="totalAmount">مبلغ کل <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="discount">تخفیف<span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="paidAmount">مبلغ پرداختی <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-sort-by="remainingAmount">مبلغ باقی‌مانده <span class="sort-indicator"></span></th>
-                    <th>وضعیت پرداخت</th>
-                    <th>وضعیت تحویل</th>
-                    <th>عملیات</th>
-                </tr>
-            </thead>
-            <tbody id="purchase-invoices-table-body"></tbody>
-        </table>
-    </div>
-    <div class="pagination-container" data-table="purchase-invoices"></div>
 </div>
 
 <div class="modal fade" id="purchaseInvoiceModal" tabindex="-1" data-bs-backdrop="static">
@@ -209,7 +208,7 @@
                                         <input type="text" class="form-control numeric-input" id="purchase-invoice-discount" value="0"><span class="input-group-text">ت</span>
                                     </div>
                                 </li>
-                                <li class="list-group-item d-flex justify-content-between align-items-center py-1 purchase-tax-row" style="display:none;">مالیات
+                                <li class="list-group-item d-flex justify-content-between align-items-center py-1 purchase-tax-row d-none">مالیات
                                     <div class="input-group input-group-sm" style="width: 150px;">
                                         <input type="text" class="form-control numeric-input" id="purchase-invoice-tax-amount" value="0" readonly><span class="input-group-text">ت</span>
                                     </div>

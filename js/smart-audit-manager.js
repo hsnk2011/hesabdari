@@ -321,8 +321,7 @@ const SmartAuditManager = {
         const n = $('.audit-issue-check:checked').length;
         $('#selected-count').text(n);
         const bar = $('#audit-bulk-actions');
-        if (n > 0) bar.css('display', 'flex').show();
-        else bar.hide();
+        bar.toggleClass('d-none', n === 0); // d-flex is !important: show/hide via d-none
     },
 
     ignoreSelected: function () {

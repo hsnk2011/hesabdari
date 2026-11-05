@@ -832,7 +832,8 @@ const ReturnInvoiceManager = (function () {
         }, 250);
     }
 
-    async function load(tableName, filters = null, message = null) {
+    // The shared paging / sort / row-limit handlers call load() with no arguments.
+    async function load(tableName = 'return_invoices', filters = null, message = null) {
         UI.showLoader();
         const state = AppConfig.TABLE_STATES[tableName];
         if (!state) {
@@ -1128,11 +1129,20 @@ const ReturnInvoiceManager = (function () {
 
             // Event: Return invoice type filter
             $(document).on('change', '#return-invoice-type-filter', function() {
-                const filterValue = $(this).val();
-                const tableName = 'return_invoices';
-                const filters = filterValue ? { invoiceType: filterValue } : {};
-                load(tableName, filters);
+                const state = AppConfig.TABLE_STATES.return_invoices;
+                state.invoiceType = $(this).val() || '';
+                state.currentPage = 1;
+                load('return_invoices');
             });
+
+            // Event: search box above the returns list
+            const returnsSearch = UI.debounce((term) => {
+                const state = AppConfig.TABLE_STATES.return_invoices;
+                state.searchTerm = term;
+                state.currentPage = 1;
+                load('return_invoices');
+            }, 500);
+            $(document).on('input', '.table-search[data-table="return_invoices"]', function () { returnsSearch($(this).val().trim()); });
 
             // Event: Edit button (always fetch from server for fresh payments/items)
             $(document).on('click', '.btn-edit[data-type="salesReturn"], .btn-edit[data-type="purchaseReturn"]', async function () {

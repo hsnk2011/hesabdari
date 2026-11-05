@@ -1,65 +1,66 @@
 <!-- /templates/section_return_invoices.php -->
 <div class="tab-pane fade" id="return-invoices" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4>فاکتورهای مرجوعی</h4>
-        <div class="d-flex align-items-center gap-3">
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="return-invoices-show-details" data-table="return_invoices">
-                <label class="form-check-label" for="return-invoices-show-details">نمایش جزییات فاکتور</label>
-            </div>
-            <div class="btn-group">
-                <button class="btn btn-primary" id="new-sales-return-btn"><i class="bi bi-plus-circle me-2"></i>ثبت مرجوعی فروش جدید</button>
-                <button class="btn btn-success" id="new-purchase-return-btn"><i class="bi bi-plus-circle me-2"></i>ثبت مرجوعی خرید جدید</button>
-            </div>
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">فاکتورهای مرجوعی</h4>
+            <p class="ui-page-sub">برگشت کالا از مشتری یا به تأمین‌کننده، با اثر روی انبار و حساب طرف</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-outline-primary" id="new-purchase-return-btn"><i class="bi bi-box-arrow-left"></i>مرجوعی خرید</button>
+            <button class="btn btn-primary" id="new-sales-return-btn"><i class="bi bi-plus-lg"></i>مرجوعی فروش</button>
         </div>
     </div>
-    <div class="row align-items-center mb-3">
-        <div class="col-md-7">
-            <div class="input-group search-box">
-                <span class="input-group-text"><i class="bi bi-search"></i></span>
+
+    <div class="ui-panel">
+        <div class="ui-toolbar">
+            <div class="ui-search search-box">
+                <i class="bi bi-search"></i>
                 <input type="text" class="form-control table-search" data-table="return_invoices" placeholder="جستجو در شماره فاکتور، نام طرف حساب، شناسه انبار، مبالغ...">
             </div>
-        </div>
-        <div class="col-md-2">
-            <select class="form-select" id="return-invoice-type-filter">
-                <option value="">همه انواع</option>
-                <option value="sales">مرجوعی فروش</option>
-                <option value="purchase">مرجوعی خرید</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <div class="input-group">
-                <label class="input-group-text">نمایش</label>
-                <select class="form-select pagination-limit-select" data-table="return_invoices">
-                    <option value="10" selected>10</option>
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                    <option value="-1">همه</option>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="return-invoice-type-filter"><i class="bi bi-funnel"></i></label>
+                <select class="form-select" id="return-invoice-type-filter">
+                    <option value="">همه انواع</option>
+                    <option value="sales">مرجوعی فروش</option>
+                    <option value="purchase">مرجوعی خرید</option>
                 </select>
-                <span class="input-group-text">ردیف</span>
+            </div>
+            <div class="ui-toolbar-end">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="return-invoices-show-details" data-table="return_invoices">
+                    <label class="form-check-label" for="return-invoices-show-details">نمایش اقلام فاکتور</label>
+                </div>
+                <label class="ui-limit" for="return-invoices-limit-select">نمایش
+                    <select id="return-invoices-limit-select" class="form-select pagination-limit-select form-select-sm" data-table="return_invoices">
+                        <option value="10" selected>10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="-1">همه</option>
+                    </select>
+                ردیف</label>
             </div>
         </div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="return-invoices-table">
+                <thead>
+                    <tr>
+                        <th class="sortable-header" data-table="return_invoices" data-sort-by="id"># <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="return_invoices" data-sort-by="type">نوع <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="return_invoices" data-sort-by="date">تاریخ <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="return_invoices" data-sort-by="personName">طرف حساب <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="return_invoices" data-sort-by="totalAmount">مبلغ کل <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="return_invoices" data-sort-by="paidAmount">مبلغ پرداختی <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="return_invoices" data-sort-by="remainingAmount">مبلغ باقی‌مانده <span class="sort-indicator"></span></th>
+                        <th>وضعیت</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="return-invoices-table-body"></tbody>
+            </table>
+        </div>
+        <div class="pagination-container" data-table="return-invoices"></div>
     </div>
-    <div class="table-responsive">
-        <table class="table table-striped table-hover">
-            <thead>
-                <tr>
-                    <th class="sortable-header" data-table="return_invoices" data-sort-by="id"># <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="return_invoices" data-sort-by="type">نوع <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="return_invoices" data-sort-by="date">تاریخ <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="return_invoices" data-sort-by="personName">طرف حساب <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="return_invoices" data-sort-by="totalAmount">مبلغ کل <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="return_invoices" data-sort-by="paidAmount">مبلغ پرداختی <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="return_invoices" data-sort-by="remainingAmount">مبلغ باقی‌مانده <span class="sort-indicator"></span></th>
-                    <th>وضعیت</th>
-                    <th>عملیات</th>
-                </tr>
-            </thead>
-            <tbody id="return-invoices-table-body"></tbody>
-        </table>
-    </div>
-    <div class="pagination-container" data-table="return_invoices"></div>
 </div>
 
 <!-- Sales Return Invoice Modal -->

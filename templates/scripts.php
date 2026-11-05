@@ -13,50 +13,58 @@
 <?php
 require_once __DIR__ . '/../api/core/constants.php';
 $v = defined('APP_VERSION') ? APP_VERSION : '2.0.119'; // Version for cache busting
+// Each script's URL also carries its modification time, so a changed file is
+// fetched again even when APP_VERSION was not bumped.
+$jsV = function (string $file) use ($v) {
+    return $file . '?v=' . $v . '.' . (int)@filemtime(dirname(__DIR__) . '/' . $file);
+};
 ?>
 <script>window.__APP_VERSION__ = <?php echo json_encode($v); ?>;</script>
-<script src="js/config.js?v=<?php echo $v; ?>"></script>
-<script src="js/api.js?v=<?php echo $v; ?>"></script>
-<script src="js/ui.js?v=<?php echo $v; ?>"></script>
-<script src="js/image-editor.js?v=<?php echo $v; ?>"></script>
-<script src="js/person-statement-print.js?v=<?php echo $v; ?>"></script>
-<script src="js/reports.js?v=<?php echo $v; ?>"></script>
-<script src="js/person-list-ui.js?v=<?php echo $v; ?>"></script>
-<script src="js/entity-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/barcode-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/collection-manager.js?v=<?php echo $v; ?>"></script> 
-<script src="js/price-list-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/transaction-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/partner-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/period-closing-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/account-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/check-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/product-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/sayad-scanner.js?v=<?php echo $v; ?>"></script>
-<script src="js/invoice-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/return-invoice-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/quotation-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/backup-manager.js?v=<?php echo $v; ?>"></script> 
-<script src="js/inventory-audit-manager.js?v=<?php echo $v; ?>"></script> 
-<script src="js/balance-audit-manager.js?v=<?php echo $v; ?>"></script> 
-<script src="js/smart-audit-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/bank-statement-parsers.js?v=<?php echo $v; ?>"></script>
-<script src="js/bank-reconciliation-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/settings-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/error-log-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/app-logger.js?v=<?php echo $v; ?>"></script>
-<script src="js/access-control-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/dashboard.js?v=<?php echo $v; ?>"></script>
-<script src="js/auth.js?v=<?php echo $v; ?>"></script>
-<script src="js/global-search.js?v=<?php echo $v; ?>"></script>
-<script src="js/tools-extra.js?v=<?php echo $v; ?>"></script>
-<script src="js/asset-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/crm-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/work-manager.js?v=<?php echo $v; ?>"></script>
-<script src="js/work-chat.js?v=<?php echo $v; ?>"></script>
-<script src="js/work-office.js?v=<?php echo $v; ?>"></script>
-<script src="js/app.js?v=<?php echo $v; ?>"></script>
-<script src="js/pwa.js?v=<?php echo $v; ?>"></script>
+<script src="<?php echo $jsV('js/config.js'); ?>"></script>
+<script src="<?php echo $jsV('js/api.js'); ?>"></script>
+<script src="<?php echo $jsV('js/ui.js'); ?>"></script>
+<script src="<?php echo $jsV('js/image-editor.js'); ?>"></script>
+<script src="<?php echo $jsV('js/person-statement-print.js'); ?>"></script>
+<script src="<?php echo $jsV('js/reports.js'); ?>"></script>
+<script src="<?php echo $jsV('js/person-list-ui.js'); ?>"></script>
+<script src="<?php echo $jsV('js/entity-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/barcode-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/collection-manager.js'); ?>"></script> 
+<script src="<?php echo $jsV('js/stock-share-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/price-list-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/transaction-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/partner-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/period-closing-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/account-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/check-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/product-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/sayad-scanner.js'); ?>"></script>
+<script src="<?php echo $jsV('js/invoice-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/return-invoice-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/quotation-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/backup-manager.js'); ?>"></script> 
+<script src="<?php echo $jsV('js/inventory-audit-manager.js'); ?>"></script> 
+<script src="<?php echo $jsV('js/balance-audit-manager.js'); ?>"></script> 
+<script src="<?php echo $jsV('js/smart-audit-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/bank-statement-parsers.js'); ?>"></script>
+<script src="<?php echo $jsV('js/bank-reconciliation-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/settings-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/error-log-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/app-logger.js'); ?>"></script>
+<script src="<?php echo $jsV('js/access-control-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/dashboard.js'); ?>"></script>
+<script src="<?php echo $jsV('js/auth.js'); ?>"></script>
+<script src="<?php echo $jsV('js/global-search.js'); ?>"></script>
+<script src="<?php echo $jsV('js/tools-extra.js'); ?>"></script>
+<script src="<?php echo $jsV('js/asset-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/crm-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/work-manager.js'); ?>"></script>
+<script src="<?php echo $jsV('js/work-chat.js'); ?>"></script>
+<script src="<?php echo $jsV('js/work-office.js'); ?>"></script>
+<script src="<?php echo $jsV('js/ui-nav.js'); ?>"></script>
+<script src="<?php echo $jsV('js/table-sort.js'); ?>"></script>
+<script src="<?php echo $jsV('js/app.js'); ?>"></script>
+<script src="<?php echo $jsV('js/pwa.js'); ?>"></script>
 
 <!-- جستجوی محصولات در مودال کلکسیون -->
 <script>

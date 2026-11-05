@@ -34,6 +34,7 @@ const SettingsManager = (function () {
         $('#setting-credit-limit-policy').val(appSettings.credit_limit_policy || 'warn');
         $('#setting-cron-mode').val(appSettings.cron_mode || 'request');
         $('#setting-workspace-enabled').prop('checked', String(appSettings.workspace_enabled ?? '1') !== '0');
+        $('#setting-ui-default-theme').val(appSettings.ui_default_theme || 'nili');
         $('#setting-reminder-sms-enabled').prop('checked', String(appSettings.reminder_sms_enabled || '0') === '1');
         $('#setting-reminder-installment-days').val(appSettings.reminder_installment_days ?? '2');
         $('#setting-reminder-overdue-every').val(appSettings.reminder_overdue_every_days ?? '7');
@@ -182,6 +183,7 @@ const SettingsManager = (function () {
             credit_limit_policy: $('#setting-credit-limit-policy').val() || 'warn',
             cron_mode: $('#setting-cron-mode').val() || 'request',
             workspace_enabled: $('#setting-workspace-enabled').is(':checked') ? '1' : '0',
+            ui_default_theme: $('#setting-ui-default-theme').val() || 'nili',
             reminder_sms_enabled: $('#setting-reminder-sms-enabled').is(':checked') ? '1' : '0',
             reminder_installment_days: String(Math.max(0, Math.min(30, parseInt($('#setting-reminder-installment-days').val(), 10) || 0))),
             reminder_overdue_every_days: String(Math.max(0, Math.min(90, parseInt($('#setting-reminder-overdue-every').val(), 10) || 0))),

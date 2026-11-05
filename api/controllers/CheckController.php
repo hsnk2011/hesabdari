@@ -379,4 +379,38 @@ class CheckController {
             send_json(['error' => 'خطای سرور هنگام دریافت گروه انتقال چک: ' . $e->getMessage()], 500);
         }
     }
+
+    /**
+     * ویرایش گروه راس‌گیری / انتقال گروهی: افزودن/حذف چک و ویرایش توضیحات
+     */
+    public function updateCheckTransferGroup($data) {
+        try {
+            $groupId = $data['transfer_group_id'] ?? null;
+            if (empty($groupId)) {
+                send_json(['error' => 'شناسه گروه انتقال الزامی است.'], 400);
+                return;
+            }
+            $add = is_array($data['addCheckIds'] ?? null) ? $data['addCheckIds'] : [];
+            $remove = is_array($data['removeCheckIds'] ?? null) ? $data['removeCheckIds'] : [];
+            $description = array_key_exists('description', $data) && $data['description'] !== null ? (string)$data['description'] : null;
+            if (empty($add) && empty($remove) && $description === null) {
+                send_json(['error' => 'تغییری برای ثبت وجود ندارد.'], 400);
+                return;
+            }
+
+            $result = $this->checkModel->updateTransferGroup($groupId, $description, $add, $remove);
+            if (isset($result['error'])) {
+                send_json(['error' => $result['error']], $result['statusCode'] ?? 500);
+                return;
+            }
+            $parts = [];
+            if ($result['added']) $parts[] = 'افزودن چک ' . implode('، ', $result['added']);
+            if ($result['removed']) $parts[] = 'حذف چک ' . implode('، ', $result['removed']);
+            if ($description !== null) $parts[] = 'ویرایش توضیحات';
+            log_activity($this->conn, 'EDIT_CHECK_TRANSFER_GROUP', "ویرایش گروه انتقال چک {$groupId}: " . implode(' / ', $parts));
+            send_json($result);
+        } catch (Exception $e) {
+            send_json(['error' => 'خطای سرور هنگام ویرایش گروه انتقال چک: ' . $e->getMessage()], 500);
+        }
+    }
 }

@@ -4,6 +4,7 @@
 require_once __DIR__ . '/../models/Settings.php';
 require_once __DIR__ . '/../models/EntitySettings.php';
 require_once __DIR__ . '/../core/MailService.php';
+require_once __DIR__ . '/../core/ui_theme.php';
 
 class SettingsController {
     private $conn;
@@ -14,6 +15,25 @@ class SettingsController {
         $this->conn = $db;
         $this->settingsModel = new Settings($db);
         $this->entitySettingsModel = new EntitySettings($db);
+    }
+
+    /** The logged-in user's own theme («قالب»); see api/core/ui_theme.php. */
+    public function saveUiTheme($data) {
+        $userId = (int)($_SESSION['user_id'] ?? 0);
+        $theme = (string)($data['theme'] ?? '');
+        if ($userId <= 0) {
+            send_json(['error' => 'ابتدا وارد شوید.'], 401);
+            return;
+        }
+        if (!in_array($theme, UI_THEMES, true)) {
+            send_json(['error' => 'قالب نامعتبر است.'], 400);
+            return;
+        }
+        if (!ui_save_user_theme($this->conn, $userId, $theme)) {
+            send_json(['error' => 'ذخیره قالب انجام نشد.'], 500);
+            return;
+        }
+        send_json(['success' => true] + ui_theme_info($this->conn, $userId));
     }
 
     public function switchEntity($data) {

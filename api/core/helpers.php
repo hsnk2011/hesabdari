@@ -914,6 +914,43 @@ function app_public_base_url() {
 }
 
 /**
+ * Area (m²) for a dimension string. Named dimensions (e.g. «پادری») are
+ * looked up in the `dimension_area_map` setting (JSON); numeric "WxH"
+ * values are multiplied after centimeter normalization, where any side
+ * larger than the `dimension_cm_threshold` setting is treated as cm.
+ * Mirrored in JS by UI.dimensionArea().
+ */
+function dimension_area_m2($conn, $dimension) {
+    $dimension = trim((string)$dimension);
+    $mapJson = get_app_setting($conn, 'dimension_area_map', '{"پادری":0.4}');
+    $map = json_decode((string)$mapJson, true);
+    if (!is_array($map)) {
+        $map = ['پادری' => 0.4];
+    }
+    if (isset($map[$dimension])) {
+        return floatval($map[$dimension]);
+    }
+    $threshold = floatval(get_app_setting($conn, 'dimension_cm_threshold', 15));
+    if ($threshold <= 0) {
+        $threshold = 15;
+    }
+    $parts = explode('x', str_replace(['*', '×'], 'x', $dimension));
+    if (count($parts) === 2) {
+        $width = floatval($parts[0]);
+        $height = floatval($parts[1]);
+        if ($width > 0 && $height > 0) {
+            // Convert each side independently: a value above the threshold
+            // can only be centimeters, so "2x200" becomes 2m x 2m instead
+            // of the whole pair being scaled together.
+            if ($width > $threshold) $width /= 100;
+            if ($height > $threshold) $height /= 100;
+            return $width * $height;
+        }
+    }
+    return 0;
+}
+
+/**
  * Short random code for public invoice links (SMS-friendly).
  */
 function generate_short_invoice_code($length = 8) {

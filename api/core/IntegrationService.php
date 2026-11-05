@@ -72,12 +72,20 @@ class IntegrationService {
         return $row;
     }
 
-    public function enqueueOutbox($eventType, $payload, $idempotencyKey) {
+    /**
+     * $rearm: an existing row with the same key is queued again (even if it was
+     * sent) instead of being kept as is.
+     */
+    public function enqueueOutbox($eventType, $payload, $idempotencyKey, $rearm = false) {
         $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE);
+        $onDuplicate = $rearm
+            ? "status = 'pending', attempts = 0, last_error = NULL, next_attempt_at = NOW(),
+               sent_at = NULL, payload_json = VALUES(payload_json)"
+            : "id = id";
         $stmt = $this->conn->prepare(
             "INSERT INTO integration_outbox (event_type, payload_json, idempotency_key, status, next_attempt_at)
              VALUES (?, ?, ?, 'pending', NOW())
-             ON DUPLICATE KEY UPDATE id = id"
+             ON DUPLICATE KEY UPDATE {$onDuplicate}"
         );
         $stmt->bind_param('sss', $eventType, $payloadJson, $idempotencyKey);
         $stmt->execute();
@@ -86,15 +94,22 @@ class IntegrationService {
         return $id;
     }
 
+    /**
+     * Queue a stock update for these products. Only the product ids are queued:
+     * the stock itself is read when the row is sent (processOutbox), so a retry
+     * never delivers an older count after a newer one. One row per product set,
+     * queued again on every change.
+     */
     public function enqueueStockSync($entityId, $productIds = []) {
         $productIds = array_values(array_unique(array_map('intval', $productIds)));
-        $snapshot = $this->buildStockSnapshot($entityId, $productIds);
-        $key = 'stock_sync_' . $entityId . '_' . md5(json_encode($productIds) . date('YmdHi'));
+        sort($productIds);
+        $key = 'stock_sync_' . $entityId . '_' . md5(json_encode($productIds));
         return $this->enqueueOutbox('stock.sync', [
             'entity_id' => intval($entityId),
-            'items' => $snapshot,
-            'generated_at' => date('c'),
-        ], $key);
+            'product_ids' => $productIds,
+            // microseconds: processOutbox compares the payload to detect a re-queue during sending
+            'queued_at' => (new DateTime())->format('Y-m-d\TH:i:s.uP'),
+        ], $key, true);
     }
 
     /**
@@ -137,7 +152,7 @@ class IntegrationService {
                     FROM products p
                     LEFT JOIN inventory_items ii
                       ON ii.product_id = p.id AND ii.entity_id = p.entity_id AND ii.status = 'in_stock'
-                    WHERE p.entity_id = ? AND p.is_active = 1
+                    WHERE p.entity_id = ?
                     GROUP BY p.id, p.sku, p.fulfillment_mode, ii.dimensions";
             $stmt = $this->conn->prepare($sql);
             $stmt->bind_param('i', $entityId);
@@ -522,10 +537,19 @@ class IntegrationService {
 
         $sent = 0;
         foreach ($rows as $row) {
+            $payload = json_decode($row['payload_json'], true);
+            if ($row['event_type'] === 'stock.sync' && is_array($payload)) {
+                // Current stock, read now (rows queued before this change carry
+                // an old 'items' list; only their product ids are used).
+                $productIds = $payload['product_ids']
+                    ?? array_values(array_unique(array_column($payload['items'] ?? [], 'product_id')));
+                $payload['items'] = $this->buildStockSnapshot(intval($payload['entity_id'] ?? 0), $productIds);
+                $payload['generated_at'] = date('c');
+            }
             $body = json_encode([
                 'event' => $row['event_type'],
                 'idempotency_key' => $row['idempotency_key'],
-                'payload' => json_decode($row['payload_json'], true),
+                'payload' => $payload,
             ], JSON_UNESCAPED_UNICODE);
 
             if ($secret === '') {
@@ -566,9 +590,11 @@ class IntegrationService {
             $attempts = intval($row['attempts']) + 1;
             if ($ok['success']) {
                 $upd = $this->conn->prepare(
-                    "UPDATE integration_outbox SET status = 'sent', attempts = ?, sent_at = NOW(), last_error = NULL WHERE id = ?"
+                    // payload check: a row queued again while it was being sent stays pending
+                    "UPDATE integration_outbox SET status = 'sent', attempts = ?, sent_at = NOW(), last_error = NULL
+                     WHERE id = ? AND payload_json = ?"
                 );
-                $upd->bind_param('ii', $attempts, $row['id']);
+                $upd->bind_param('iis', $attempts, $row['id'], $row['payload_json']);
                 $upd->execute();
                 $upd->close();
                 $sent++;
@@ -577,9 +603,9 @@ class IntegrationService {
                 $err = substr($ok['error'] ?? 'unknown', 0, 500);
                 $upd = $this->conn->prepare(
                     "UPDATE integration_outbox SET status = 'failed', attempts = ?, last_error = ?,
-                     next_attempt_at = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?"
+                     next_attempt_at = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ? AND payload_json = ?"
                 );
-                $upd->bind_param('isii', $attempts, $err, $delayMin, $row['id']);
+                $upd->bind_param('isiis', $attempts, $err, $delayMin, $row['id'], $row['payload_json']);
                 $upd->execute();
                 $upd->close();
             }

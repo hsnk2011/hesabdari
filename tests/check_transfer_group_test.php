@@ -145,6 +145,50 @@ try {
     $endorseRow = db_stmt_to_assoc_array($st)[0] ?? null;
     expect_true(($endorseRow['type'] ?? '') === 'endorse_check', 'endorse payment lookup for endorsed check');
 
+    // ---- Edit the group afterwards: remove one, add a new one + the returned one, rewrite description ----
+    $conn->query("INSERT INTO checks (entity_id, type, status, checkNumber, bankName, issuerName, dueDate, amount)
+                  VALUES ({$entityId}, 'received', 'in_hand', '{$token}-4', 'ملی', 'صادرکننده', '2032-09-01', 4000000)");
+    $check4 = (int)$conn->insert_id;
+    $created['checks'][] = $check4;
+    $conn->query("INSERT INTO payments (entity_id, person_id, person_type, transaction_type, type, amount, date, description, checkId)
+                  VALUES ({$entityId}, {$customerId}, 'customer', 'receipt', 'check', 4000000, '{$date}', 'دریافت {$token}-4', {$check4})");
+
+    expect_true(($groupAfter['common_description'] ?? null) === 'تست گروه انتقال ' . $token, 'common description strips discount suffix');
+    $removable = array_column($groupAfter['checks'], 'removable', 'id');
+    expect_true($removable[$checkIds[0]] === false && $removable[$checkIds[1]] === true, 'returned check is not removable, endorsed sibling is');
+
+    $bad = $checkModel->updateTransferGroup($groupId, null, [], [$checkIds[0]]);
+    expect_true(!empty($bad['error']), 'cannot remove a returned check');
+
+    $edit = $checkModel->updateTransferGroup($groupId, 'توضیح جدید ' . $token, [$check4, $checkIds[0]], [$checkIds[2]]);
+    expect_true(!empty($edit['success']), 'updateTransferGroup succeeds');
+    expect_true((int)($edit['remainingCount'] ?? 0) === 3, 'three active checks after edit');
+
+    $st3 = $one("SELECT status FROM checks WHERE id = {$checkIds[2]}");
+    expect_true($st3['status'] === 'in_hand', 'removed check is back in hand');
+    $st4 = $one("SELECT status FROM checks WHERE id = {$check4}");
+    expect_true($st4['status'] === 'endorsed', 'added check is endorsed');
+    $st0 = $one("SELECT status FROM checks WHERE id = {$checkIds[0]}");
+    expect_true($st0['status'] === 'endorsed', 'returned check re-added to group');
+
+    $edited = $checkModel->getTransferGroup($groupId, null);
+    $ids = array_column($edited['checks'], 'id');
+    sort($ids);
+    $expectIds = [$checkIds[0], $checkIds[1], $check4];
+    sort($expectIds);
+    expect_true($ids === $expectIds, 'group lists re-added, kept and added checks once each');
+    expect_true(($edited['common_description'] ?? '') === 'توضیح جدید ' . $token, 'description updated on all rows');
+    $sib = $one("SELECT description FROM payments WHERE type = 'endorse_check' AND checkId = {$checkIds[1]} AND transfer_group_id = '{$groupId}'");
+    expect_true(mb_strpos($sib['description'], '(تنزیل: 10,000 تومان)') !== false, 'per-row discount suffix kept');
+    $p4 = $one("SELECT person_id, person_type, date FROM payments WHERE type = 'endorse_check' AND checkId = {$check4}");
+    expect_true((int)$p4['person_id'] === $supplierId && $p4['person_type'] === 'supplier' && $p4['date'] === $date, 'added row uses group person and date');
+
+    $auto = $checkModel->updateTransferGroup($groupId, '', [], []);
+    $r4 = $one("SELECT description FROM payments WHERE type = 'endorse_check' AND checkId = {$check4}");
+    expect_true(!empty($auto['success']) && mb_strpos($r4['description'], "راس‌گیری و انتقال چک {$token}-4 به") === 0, 'empty description restores per-check default');
+    $again = $checkModel->getTransferGroup($groupId, null);
+    expect_true(($again['common_description'] ?? null) === '', 'auto descriptions report empty common description');
+
 } catch (Throwable $e) {
     echo "[ERROR] " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";
     $failed++;

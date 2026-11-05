@@ -17,7 +17,9 @@ $assetV = defined('APP_VERSION') ? APP_VERSION : '2.0.119';
 
 // Brand title from settings (best-effort; falls back to a neutral default).
 require_once __DIR__ . '/api/config.php';
+require_once __DIR__ . '/api/core/ui_theme.php';
 $appTitle = 'سیستم حسابداری';
+$ui = ['theme' => UI_THEME_FALLBACK, 'user_theme' => '', 'default_theme' => UI_THEME_FALLBACK, 'family' => 'modern'];
 try {
     $titleConn = @new mysqli(DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME);
     if ($titleConn && !$titleConn->connect_error) {
@@ -26,15 +28,23 @@ try {
         if ($t !== '') {
             $appTitle = $t;
         }
+        $ui = ui_theme_info($titleConn, (int)($_SESSION['user_id'] ?? 0));
         $titleConn->close();
     }
 } catch (Throwable $e) { /* keep default title */ }
 
 $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
 $baseHref = ($basePath === '' ? '' : $basePath) . '/';
+
+// «قالب»: classic renders the frozen pre-2.6 templates, every other theme the redesigned ones.
+$isClassic = $ui['family'] === 'classic';
+$tpl = $isClassic ? 'templates/classic' : 'templates';
+$cssV = function (string $file) use ($assetV) {
+    return $file . '?v=' . $assetV . '.' . (int)@filemtime(__DIR__ . '/' . $file);
+};
 ?>
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="fa" dir="rtl" data-ui="<?php echo $isClassic ? 'classic' : 'modern'; ?>" data-ui-theme="<?php echo htmlspecialchars($ui['theme'], ENT_QUOTES, 'UTF-8'); ?>">
 
 <head>
     <meta charset="UTF-8">
@@ -44,6 +54,8 @@ $baseHref = ($basePath === '' ? '' : $basePath) . '/';
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta name="csrf-token" content="<?php echo htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8'); ?>">
     <title><?php echo htmlspecialchars($appTitle, ENT_QUOTES, 'UTF-8'); ?></title>
+    <script>window.__UI__ = <?php echo json_encode($ui); ?>;</script>
+    <script src="<?php echo $cssV('js/theme.js'); ?>"></script>
 
     <!-- PWA -->
     <link rel="manifest" href="manifest.php">
@@ -70,7 +82,14 @@ $baseHref = ($basePath === '' ? '' : $basePath) . '/';
     <link rel="stylesheet" href="assets/css/toastr.min.css">
     <link rel="stylesheet" href="style.css?v=<?php echo $assetV . "." . (int)@filemtime(__DIR__ . "/style.css"); ?>">
     <link rel="stylesheet" href="assets/css/print-label.css">
+<?php if ($isClassic): ?>
     <link rel="stylesheet" href="assets/css/dark-mode.css?v=<?php echo $assetV; ?>">
+<?php else: ?>
+    <link rel="stylesheet" href="<?php echo $cssV('assets/css/modern/tokens.css'); ?>">
+    <link rel="stylesheet" href="<?php echo $cssV('assets/css/modern/components.css'); ?>">
+    <link rel="stylesheet" href="<?php echo $cssV('assets/css/modern/layout.css'); ?>">
+    <link rel="stylesheet" href="<?php echo $cssV('assets/css/modern/pages.css'); ?>">
+<?php endif; ?>
 </head>
 
 <body>
@@ -81,44 +100,44 @@ $baseHref = ($basePath === '' ? '' : $basePath) . '/';
         </div>
     </div>
     
-    <?php include 'templates/login_overlay.php'; ?>
+    <?php include $tpl . '/login_overlay.php'; ?>
 
     <div class="container-fluid main-container">
         
-        <?php include 'templates/header.php'; ?>
-        <?php include 'templates/main_tabs.php'; ?>
+        <?php include $tpl . '/header.php'; ?>
+        <?php if ($isClassic) { include $tpl . '/main_tabs.php'; } // the redesigned header.php includes its own ?>
 
         <div class="tab-content pt-3" id="mainTabContent">
-            <?php include 'templates/section_dashboard.php'; ?>
-            <?php include 'templates/section_crm.php'; ?>
-            <?php include 'templates/section_quotations.php'; ?>
-            <?php include 'templates/section_sales.php'; ?>
-            <?php include 'templates/section_purchases.php'; ?>
-            <?php include 'templates/section_return_invoices.php'; ?>
-            <?php include 'templates/section_products.php'; ?>
-            <?php include 'templates/section_price_list.php'; ?>
-            <?php include 'templates/section_consignment.php'; ?>
-            <?php include 'templates/section_transactions.php'; ?>
-            <?php include 'templates/section_checks.php'; ?>
-            <?php include 'templates/section_accounts.php'; ?>
-            <?php include 'templates/section_assets.php'; ?>
-            <?php include 'templates/section_customers.php'; ?>
-            <?php include 'templates/section_suppliers.php'; ?>
-            <?php include 'templates/section_contacts.php'; ?>
-            <?php include 'templates/section_reports.php'; ?>
-            <?php include 'templates/section_smart_audit.php'; ?>
-            <?php include 'templates/section_tools.php'; ?>
-            <?php include 'templates/section_settings.php'; ?>
+            <?php include $tpl . '/section_dashboard.php'; ?>
+            <?php include $tpl . '/section_crm.php'; ?>
+            <?php include $tpl . '/section_quotations.php'; ?>
+            <?php include $tpl . '/section_sales.php'; ?>
+            <?php include $tpl . '/section_purchases.php'; ?>
+            <?php include $tpl . '/section_return_invoices.php'; ?>
+            <?php include $tpl . '/section_products.php'; ?>
+            <?php include $tpl . '/section_price_list.php'; ?>
+            <?php include $tpl . '/section_consignment.php'; ?>
+            <?php include $tpl . '/section_transactions.php'; ?>
+            <?php include $tpl . '/section_checks.php'; ?>
+            <?php include $tpl . '/section_accounts.php'; ?>
+            <?php include $tpl . '/section_assets.php'; ?>
+            <?php include $tpl . '/section_customers.php'; ?>
+            <?php include $tpl . '/section_suppliers.php'; ?>
+            <?php include $tpl . '/section_contacts.php'; ?>
+            <?php include $tpl . '/section_reports.php'; ?>
+            <?php include $tpl . '/section_smart_audit.php'; ?>
+            <?php include $tpl . '/section_tools.php'; ?>
+            <?php include $tpl . '/section_settings.php'; ?>
         </div>
     </div>
 
     <?php 
     // Centralized modals
-    include 'templates/modals_all.php'; 
-    include 'templates/modals_general.php'; 
+    include $tpl . '/modals_all.php'; 
+    include $tpl . '/modals_general.php'; 
     ?>
     
-    <?php include 'templates/scripts.php'; ?>
+    <?php include 'templates/scripts.php'; // shared by both template sets ?>
 </body>
 
 </html>

@@ -84,6 +84,25 @@ const PriceListManager = (function () {
         </td>`;
     }
 
+    // قیمت همکاری هر متر (only for users who can edit prices; never printed).
+    function renderPartnerPriceCell(item, type) {
+        if (!canEditPrices()) return '';
+        const partner = Number(item.partner_price_per_meter);
+        const text = partner > 0
+            ? UI.formatCurrency(partner)
+            : '<span class="text-muted" title="قیمت فروش منهای درصد همکاری لینک">٪ لینک</span>';
+        return `<td class="partner-price-cell align-middle">
+            <div class="d-flex align-items-center justify-content-center gap-1">
+                <span>${text}</span>
+                ${editButtonHtml('price-edit-btn', `data-id="${item.id}" data-type="${type}" data-focus="meter" data-field="partner"`, 'تغییر قیمت همکاری')}
+            </div>
+        </td>`;
+    }
+
+    function partnerHeader() {
+        return canEditPrices() ? '<th class="partner-price-cell">قیمت همکاری هر متر</th>' : '';
+    }
+
     function renderStackedDimPrice(item, type, dim, priceText) {
         if (!canEditPrices()) {
             return `<div>${priceText}</div>`;
@@ -130,9 +149,17 @@ const PriceListManager = (function () {
             return;
         }
 
+        const isPartner = options.field === 'partner';
         const dims = itemDimensions(item);
         const preferredDim = options.dimension && dims.includes(options.dimension) ? options.dimension : dims[0];
-        const meter = item.has_no_price ? NaN : Number(item.price_per_meter);
+        const meter = isPartner
+            ? Number(item.partner_price_per_meter)
+            : (item.has_no_price ? NaN : Number(item.price_per_meter));
+
+        $('#set-price-field').val(isPartner ? 'partner' : 'sale');
+        $('#setPriceModal .modal-title').text(isPartner ? 'تغییر قیمت همکاری' : 'تغییر قیمت');
+        $('#set-price-meter-label').text(isPartner ? 'قیمت همکاری هر متر مربع' : 'قیمت هر متر مربع');
+        $('#set-price-partner-hint').toggleClass('d-none', !isPartner);
 
         $('#set-price-id').val(item.id);
         $('#set-price-type').val(type);
@@ -167,6 +194,7 @@ const PriceListManager = (function () {
     async function saveSetPrice() {
         const id = parseInt($('#set-price-id').val(), 10);
         const type = $('#set-price-type').val();
+        const field = $('#set-price-field').val() === 'partner' ? 'partner' : 'sale';
         let meter = parsePriceNumber($('#set-price-meter').val());
         const total = parsePriceNumber($('#set-price-total').val());
         const area = selectedArea();
@@ -176,16 +204,18 @@ const PriceListManager = (function () {
             $('#set-price-meter').val(formatPriceNumber(meter));
         }
 
-        if (!Number.isFinite(meter) || meter < 0) {
+        // An empty partner price falls back to the share link's percentage.
+        const clearPartner = field === 'partner' && !Number.isFinite(meter);
+        if (!clearPartner && (!Number.isFinite(meter) || meter < 0)) {
             UI.showError('لطفاً قیمت هر متر یا قیمت کل را وارد کنید');
             $('#set-price-meter').trigger('focus');
             return;
         }
 
-        const price = Math.round(meter);
+        const price = clearPartner ? '' : Math.round(meter);
         $('#apply-set-price').prop('disabled', true);
         UI.showLoader();
-        const result = await Api.call('set_price', { id, type, price });
+        const result = await Api.call('set_price', { id, type, price, field });
         UI.hideLoader();
         $('#apply-set-price').prop('disabled', false);
 
@@ -224,6 +254,7 @@ const PriceListManager = (function () {
                     <tr>
                         <th class="text-end">نام کلکسیون</th>
                          <th>قیمت هر متر مربع</th>
+                        ${partnerHeader()}
                         ${collection_dimensions.map(dim => `<th>${UI.escapeHtml(dim)}</th>`).join('')}
                     </tr>
                 </thead>
@@ -246,6 +277,7 @@ const PriceListManager = (function () {
                 tableHtml += `<tr class="${noPriceClass}">
                     <td class="text-end fw-bold">${UI.escapeHtml(collection.name)} <span class="badge bg-${collection.type === 'machine' ? 'info' : 'success'}">${collection.type === 'machine' ? 'ماشینی' : 'دستبافت'}</span></td>
                     ${renderMeterPriceCell(collection, 'collection')}
+                    ${renderPartnerPriceCell(collection, 'collection')}
                     ${dimCells}
                 </tr>`;
             });
@@ -293,6 +325,7 @@ const PriceListManager = (function () {
                         <tr>
                             <th class="text-end">نام محصول</th>
                             <th>قیمت هر متر مربع</th>
+                            ${partnerHeader()}
                             <th>ابعاد</th>
                             <th>قیمت</th>
                         </tr>
@@ -326,6 +359,7 @@ const PriceListManager = (function () {
                     finalHtml += `<tr class="${noPriceClass}">
                         <td class="text-end fw-bold">${UI.escapeHtml(product.name)}</td>
                         ${renderMeterPriceCell(product, 'product')}
+                        ${renderPartnerPriceCell(product, 'product')}
                         <td class="text-end">${dimsHtml}</td>
                         <td>${pricesHtml}</td>
                     </tr>`;
@@ -350,9 +384,18 @@ const PriceListManager = (function () {
         UI.hideLoader();
     }
 
+    // The printed list is the sales price list: colleague prices stay off paper.
+    function printableHtml(selector) {
+        const $el = $(selector);
+        if (!$el.length) return '';
+        const $copy = $el.clone();
+        $copy.find('.partner-price-cell').remove();
+        return $copy.prop('outerHTML');
+    }
+
     function print() {
-        const collectionsTableHtml = $('#price-list-collections-table').length ? $('#price-list-collections-table').prop('outerHTML') : '';
-        const productsRowHtml = $('#single-products-price-list-row').length ? $('#single-products-price-list-row').prop('outerHTML') : '';
+        const collectionsTableHtml = printableHtml('#price-list-collections-table');
+        const productsRowHtml = printableHtml('#single-products-price-list-row');
         const entityName = App.getAppState().businessEntities.find(e => e.id == App.getAppState().currentEntityId)?.name || 'مجموعه';
 
         const printWindow = window.open('', '_blank');
@@ -463,6 +506,7 @@ const PriceListManager = (function () {
 
     function init() {
         $('#print-price-list-btn').on('click', print);
+        if (typeof StockShareManager !== 'undefined') StockShareManager.init();
         
         $('#bulk-price-update-btn').on('click', function() {
             $('#bulk-price-percentage').val('');
@@ -488,7 +532,8 @@ const PriceListManager = (function () {
             const $btn = $(this);
             openPriceModal($btn.data('type'), $btn.data('id'), {
                 focus: $btn.data('focus') || 'meter',
-                dimension: $btn.attr('data-dim') || ''
+                dimension: $btn.attr('data-dim') || '',
+                field: $btn.attr('data-field') || 'sale'
             });
         });
 

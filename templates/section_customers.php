@@ -1,49 +1,56 @@
 <div class="tab-pane fade" id="customers" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h4 class="mb-0">مدیریت مشتریان</h4>
-        <button class="btn btn-primary" id="add-customer-btn"><i class="bi bi-plus-circle me-2"></i>افزودن مشتری جدید</button>
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">مشتریان</h4>
+            <p class="ui-page-sub">مانده حساب، فاکتورها و پرداخت‌های هر مشتری</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-primary" id="add-customer-btn"><i class="bi bi-plus-lg"></i>مشتری جدید</button>
+        </div>
     </div>
-    <div id="customers-filter-info"></div>
-    <div class="row g-2 align-items-center mb-3">
-        <div class="col-md-5">
-            <div class="input-group search-box">
-                <span class="input-group-text"><i class="bi bi-search"></i></span>
+
+    <div class="ui-panel">
+        <div class="ui-toolbar">
+            <div class="ui-search search-box">
+                <i class="bi bi-search"></i>
                 <input type="text" class="form-control" id="customer-search" placeholder="جستجو در نام، آدرس، تلفن، کد ملی...">
             </div>
-        </div>
-        <div class="col-md-2">
-            <select class="form-select pagination-limit-select" id="customers-limit-select" data-table="customers">
-                <option value="10">10 ردیف</option>
-                <option value="15">15 ردیف</option>
-                <option value="25" selected>25 ردیف</option>
-                <option value="50">50 ردیف</option>
-                <option value="100">100 ردیف</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select class="form-select" id="customers-balance-filter">
-                <option value="">همه وضعیت‌ها</option>
-                <option value="positive">فقط بدهکار</option>
-                <option value="negative">فقط بستانکار</option>
-                <option value="settled">تسویه‌شده</option>
-            </select>
-        </div>
-        <div class="col-md-2 text-end">
-            <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="bi bi-layout-three-columns me-1"></i>ستون‌ها
-                </button>
-                <div class="dropdown-menu dropdown-menu-end p-2 shadow" id="customers-column-menu" style="min-width: 220px;"></div>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="customers-balance-filter"><i class="bi bi-funnel"></i></label>
+                <select class="form-select" id="customers-balance-filter">
+                    <option value="">همه وضعیت‌ها</option>
+                    <option value="positive">فقط بدهکار</option>
+                    <option value="negative">فقط بستانکار</option>
+                    <option value="settled">تسویه‌شده</option>
+                </select>
+            </div>
+            <div class="ui-toolbar-end">
+                <label class="ui-limit" for="customers-limit-select">نمایش
+                    <select class="form-select pagination-limit-select form-select-sm" id="customers-limit-select" data-table="customers">
+                        <option value="10">10</option>
+                        <option value="15">15</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                ردیف</label>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle btn-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-layout-three-columns"></i> ستون‌ها
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end p-2 shadow" id="customers-column-menu" style="min-width: 220px;"></div>
+                </div>
             </div>
         </div>
+        <div id="customers-filter-info" class="ui-filter-info"></div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="customers-table">
+                <thead><tr></tr></thead>
+                <tbody id="customers-table-body"></tbody>
+            </table>
+        </div>
+        <div class="pagination-container" data-table="customers"></div>
     </div>
-    <div class="table-responsive">
-        <table class="table table-striped table-hover" id="customers-table">
-            <thead><tr></tr></thead>
-            <tbody id="customers-table-body"></tbody>
-        </table>
-    </div>
-    <div class="pagination-container" data-table="customers"></div>
 </div>
 
 <div class="modal fade" id="customerModal" tabindex="-1">

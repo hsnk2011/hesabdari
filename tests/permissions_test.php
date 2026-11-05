@@ -61,7 +61,7 @@ expect_true(empty($unknownUi), 'UI uses only defined permissions' . ($unknownUi 
 // 3) every route is covered
 $selfChecked = [
     // public / session plumbing
-    'login', 'logout', 'check_session', 'get_public_settings', 'change_password', 'switch_entity',
+    'login', 'logout', 'check_session', 'get_public_settings', 'change_password', 'switch_entity', 'save_ui_theme',
     'get_entity_print_settings', 'report_client_error', 'check_auto_backup_status', 'run_pending_auto_backup',
     'run_automatic_backup', 'receive_remote_backup',
     // permission decided in index.php or inside the controller

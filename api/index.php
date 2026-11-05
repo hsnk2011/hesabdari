@@ -24,6 +24,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/core/constants.php';
 require_once __DIR__ . '/core/helpers.php';
 require_once __DIR__ . '/core/RateLimiter.php';
+require_once __DIR__ . '/core/ui_theme.php';
 
 // Re-apply min level after constants (APP_DEBUG) are loaded
 if (defined('APP_DEBUG') && APP_DEBUG === true) {
@@ -222,6 +223,7 @@ $permission_map = [
     'list_warehouse_stock' => 'manage_products',
     'deliver_order_items' => 'manage_products',
     'list_convertible_orders' => 'manage_products',
+    'match_order_stock' => 'manage_products',
     'assign_sold_to_order_warehouse' => 'manage_products',
     'label_data' => 'manage_products',
     'get_batch_label_data' => 'manage_products',
@@ -240,6 +242,9 @@ $permission_map = [
     'get_price_list_data' => 'view_price_list',
     'update_prices_by_percentage' => 'manage_collections',
     'set_price' => 'manage_collections',
+    'get_stock_share_links' => 'manage_collections',
+    'save_stock_share_link' => 'manage_collections',
+    'revoke_stock_share_link' => 'manage_collections',
     'get_paginated_data_customers' => 'manage_customers',
     'get_paginated_data_suppliers' => 'manage_suppliers',
     'get_paginated_data_contacts' => 'manage_contacts',
@@ -277,6 +282,7 @@ $permission_map = [
     'get_check_history' => 'manage_checks',
     'get_checks_for_print' => 'manage_checks',
     'get_check_transfer_group' => 'manage_checks',
+    'update_check_transfer_group' => 'manage_checks',
     'bounce_check' => 'manage_checks',
     'undo_bounce_check' => 'manage_checks',
     'return_endorsed_check' => 'manage_checks',
@@ -290,6 +296,7 @@ $permission_map = [
     'attach_advance_payments' => 'manage_transactions',
     'get_open_purchase_invoices' => ['manage_sales_invoices', 'manage_purchase_invoices', 'manage_transactions'],
     'check_auto_backup_status' => null,
+    'save_ui_theme' => null, // every logged-in user picks their own theme
     'run_pending_auto_backup' => null,
     'run_partner_check_alerts' => 'manage_settings',
     'list_backups' => 'manage_settings',
@@ -775,6 +782,7 @@ $routes = [
     'list_warehouse_stock' => ['InventoryController', 'listStock'],
     'deliver_order_items' => ['InventoryController', 'deliverOrderItems'],
     'list_convertible_orders' => ['InventoryController', 'listConvertibleOrders'],
+    'match_order_stock' => ['InventoryController', 'matchOrderStock'],
     'assign_sold_to_order_warehouse' => ['InventoryController', 'assignSoldToOrderWarehouse'],
     'label_data' => ['ProductController', 'labelData'],
     'get_batch_label_data' => ['ProductController', 'getBatchLabelData'],
@@ -811,6 +819,9 @@ $routes = [
     'get_price_list_data' => ['PriceListController', 'getPriceListData'],
     'update_prices_by_percentage' => ['PriceListController', 'updatePricesByPercentage'],
     'set_price' => ['PriceListController', 'setPrice'],
+    'get_stock_share_links' => ['StockShareController', 'getLinks'],
+    'save_stock_share_link' => ['StockShareController', 'saveLink'],
+    'revoke_stock_share_link' => ['StockShareController', 'revokeLink'],
     'save_customer' => ['CustomerController', 'save'],
     'delete_customer' => ['CustomerController', 'delete'],
     'save_supplier' => ['SupplierController', 'save'],
@@ -837,6 +848,7 @@ $routes = [
     'get_check_history' => ['CheckController', 'getCheckHistory'],
     'get_checks_for_print' => ['CheckController', 'getChecksForPrint'],
     'get_check_transfer_group' => ['CheckController', 'getCheckTransferGroup'],
+    'update_check_transfer_group' => ['CheckController', 'updateCheckTransferGroup'],
     'bounce_check' => ['CheckController', 'bounceCheck'],
     'undo_bounce_check' => ['CheckController', 'undoBounce'],
     'return_endorsed_check' => ['CheckController', 'returnEndorsedCheck'],
@@ -856,6 +868,7 @@ $routes = [
     'execute_account_close' => ['PeriodClosingController', 'executeClose'],
     'reopen_account_closing' => ['PeriodClosingController', 'reopenClosing'],
     'switch_entity' => ['SettingsController', 'switchEntity'],
+    'save_ui_theme' => ['SettingsController', 'saveUiTheme'],
     'get_app_settings' => ['SettingsController', 'getAppSettings'],
     'get_public_settings' => ['SettingsController', 'getPublicSettings'],
     'save_app_settings' => ['SettingsController', 'saveAppSettings'],

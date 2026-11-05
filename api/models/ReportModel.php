@@ -2,6 +2,7 @@
 // /api/models/ReportModel.php
 
 require_once __DIR__ . '/../core/AnalyticsCalculations.php';
+require_once __DIR__ . '/../core/statement_text.php';
 
 class ReportModel {
     use AnalyticsCalculations;
@@ -171,6 +172,28 @@ class ReportModel {
             } else {
                 $balance += $isCustomer ? ($debit - $credit) : ($credit - $debit);
             }
+        }
+
+        // Checks moved together: one line per check under the group row.
+        if ($showInvoiceDetails && !empty($tx['checkGroup'])) {
+            $statusLabels = ['pending' => 'در انتظار', 'cashed' => 'وصول شده', 'bounced' => 'برگشتی', 'endorsed' => 'خرج شده'];
+            $first = true;
+            foreach ($tx['checkGroup'] as $c) {
+                $rows[] = [
+                    $first ? $this->formatExportDate($tx['date']) : '',
+                    $first ? $description : '',
+                    'چک ' . ($c['checkNumber'] ?? '') . (!empty($c['bankName']) ? ' — ' . $c['bankName'] : '') . (!empty($c['issuerName']) ? ' — ' . $c['issuerName'] : ''),
+                    !empty($c['dueDate']) ? 'سررسید ' . $this->formatExportDate($c['dueDate']) : '',
+                    '',
+                    $c['amount'] ?? '',
+                    $statusLabels[$c['status'] ?? ''] ?? ($c['status'] ?? ''),
+                    $first ? $debit : '',
+                    $first ? $credit : '',
+                    $first ? $balance : '',
+                ];
+                $first = false;
+            }
+            return;
         }
 
         $items = ($showInvoiceDetails && !empty($tx['items'])) ? $tx['items'] : [];
@@ -1947,7 +1970,101 @@ class ReportModel {
         return ['openingStock' => $openingStock, 'transactions' => $transactions];
     }
 
+    /** Short (customer-ready) descriptions in person statements; see api/core/statement_text.php. */
+    private $statementShortText = true;
+
+    /** Rows of a statement query with their descriptions shortened (raw text kept for internal checks). */
+    private function statementRows(array $rows): array {
+        foreach ($rows as &$row) {
+            if (!array_key_exists('description', $row) || $row['description'] === null || $row['description'] === '') continue;
+            $row['description_raw'] = $row['description'];
+            $row['description'] = $this->statementShortText
+                ? statement_short_description((string)$row['description'])
+                : statement_strip_transfer_marker((string)$row['description']);
+        }
+        unset($row);
+        return $rows;
+    }
+
+    /**
+     * Key under which statement check rows are merged: the transfer group of a
+     * group endorsement, else (for checks with a description) the same kind of
+     * row with the same description start on the same day. null = never merged.
+     */
+    private function statementCheckGroupKey(array $pay): ?string {
+        $kind = $pay['type'] . ':' . $pay['transaction_type'];
+        if (!empty($pay['transfer_group_id'])) {
+            return 'g:' . $pay['transfer_group_id'] . ':' . $kind;
+        }
+        $label = $this->statementCheckGroupLabel((string)($pay['description'] ?? ''));
+        return $label === '' ? null : 'd:' . $kind . ':' . $label;
+    }
+
+    /** The shared part of a check row's text: before « | », without check/serial numbers. */
+    private function statementCheckGroupLabel(string $description): string {
+        $text = explode(' | ', $description, 2)[0];
+        $text = preg_replace('/[0-9۰-۹٠-٩]{5,}/u', ' ', $text);
+        return trim(preg_replace('/\s+/u', ' ', $text));
+    }
+
+    /**
+     * Merges statement rows of checks that moved together into one row
+     * («(چک) ۵۰ فقره چک — …» with their total); the checks are listed under it
+     * (checkGroup) when details are asked for. Rows merge only when their key
+     * matches — including date, pending and «unrealized» state — so totals and
+     * the running balance are exactly those of the separate rows.
+     */
+    private function groupStatementChecks(array $transactions, bool $withDetails): array {
+        $members = [];
+        foreach ($transactions as $i => $tx) {
+            if (!empty($tx['_checkGroupKey'])) {
+                $members[$tx['_checkGroupKey']][] = $i;
+            }
+        }
+        $drop = [];
+        foreach ($members as $indexes) {
+            if (count($indexes) < 2) continue;
+            $first = $transactions[$indexes[0]];
+            $lines = [];
+            $debit = 0.0;
+            $credit = 0.0;
+            foreach ($indexes as $i) {
+                $debit += (float)$transactions[$i]['debit'];
+                $credit += (float)$transactions[$i]['credit'];
+                $lines[] = $transactions[$i]['_checkLine'];
+                if ($i !== $indexes[0]) $drop[$i] = true;
+            }
+            $n = count($indexes);
+            $prefix = preg_match('/^\((چک|خرج چک)\)\s*/u', (string)$first['description'], $m) ? '(' . $m[1] . ') ' : '';
+            $label = $this->statementCheckGroupLabel((string)$first['_checkLine']['description']);
+            $countText = strtr((string)$n, ['0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴', '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹']) . ' فقره چک';
+            $pendingTag = !empty($first['isUnrealized']) && $prefix === '(چک) ' ? ' (منتظر اقدام)' : '';
+            $group = $first;
+            unset($group['checkDetails'], $group['_checkGroupKey'], $group['_checkLine']);
+            // «انتقال ۵۰ فقره چک به …» already says how many: no second count in front.
+            $group['description'] = $prefix . (mb_strpos($label, 'فقره چک') !== false ? $label : $countText . ($label !== '' ? ' — ' . $label : '')) . $pendingTag;
+            $group['debit'] = $debit;
+            $group['credit'] = $credit;
+            $group['refType'] = 'check_group';
+            $group['refId'] = null;
+            $group['checkCount'] = $n;
+            if ($withDetails) {
+                $group['checkGroup'] = array_map(function ($l) { unset($l['description']); return $l; }, $lines);
+            }
+            $transactions[$indexes[0]] = $group;
+        }
+        $out = [];
+        foreach ($transactions as $i => $tx) {
+            if (isset($drop[$i])) continue;
+            unset($tx['_checkGroupKey'], $tx['_checkLine']);
+            $out[] = $tx;
+        }
+        return $out;
+    }
+
     public function getPersonStatement($data) {
+        // «نمایش جزئیات کامل بانک» off (the default): bank-imported payments get a short description.
+        $this->statementShortText = !$this->parseBoolParam($data, 'showBankDetails', false);
         $personType = $data['personType'];
         $personId = intval($data['personId']);
         $startDate = $data['startDate'];
@@ -2130,7 +2247,7 @@ class ReportModel {
         $payment_stmt = $this->conn->prepare($sql_payments);
         $payment_stmt->bind_param($payment_param_types, ...$payment_params);
         $payment_stmt->execute();
-        $payment_rows = db_stmt_to_assoc_array($payment_stmt);
+        $payment_rows = $this->statementRows(db_stmt_to_assoc_array($payment_stmt));
 
         // Ids already listed below — the partner-account query further down must
         // not add them a second time.
@@ -2188,7 +2305,7 @@ class ReportModel {
                         }
 
                         $isInterPartner = false;
-                        if (preg_match('/^TRANSFER:(\d+):(\d+):/', (string)$pay['description'], $m)) {
+                        if (preg_match('/^TRANSFER:(\d+):(\d+):/', (string)($pay['description_raw'] ?? $pay['description']), $m)) {
                             $otherId = ((int)$pay['account_id'] === (int)$m[1]) ? (int)$m[2] : (int)$m[1];
                             $chk = $this->conn->prepare("SELECT partner_id FROM accounts WHERE id = ? AND entity_id = ? LIMIT 1");
                             $chk->bind_param("ii", $otherId, $entityId);
@@ -2286,6 +2403,25 @@ class ReportModel {
                     'status' => $pay['check_status']
                 ];
             }
+
+            // Checks moved together (group endorsement, a batch received the same day)
+            // are merged into one row by groupStatementChecks().
+            if (!empty($pay['checkId']) && in_array($pay['type'], ['check', 'endorse_check'], true)) {
+                $groupKey = $this->statementCheckGroupKey($pay);
+                if ($groupKey !== null) {
+                    $tx['_checkGroupKey'] = $groupKey . '|' . $tx['date'] . '|' . (int)$isUnrealized . '|' . (int)!empty($tx['isPendingCheck']);
+                    $tx['_checkLine'] = [
+                        'checkId' => (int)$pay['checkId'],
+                        'checkNumber' => $pay['checkNumber'] ?? '',
+                        'bankName' => $pay['check_bankName'] ?? '',
+                        'issuerName' => $pay['check_issuerName'] ?? '',
+                        'dueDate' => $pay['check_maturity_date'] ?? $pay['check_dueDate'] ?? null,
+                        'status' => $pay['check_status'] ?? '',
+                        'amount' => floatval($pay['amount']),
+                        'description' => (string)($pay['description'] ?? ''),
+                    ];
+                }
+            }
             
             $transactions[] = $tx;
         }
@@ -2332,7 +2468,7 @@ class ReportModel {
             $stmt_inv_pays = $this->conn->prepare("SELECT * FROM payments WHERE account_id = ? AND invoiceId IS NOT NULL AND date BETWEEN ? AND ?");
             $stmt_inv_pays->bind_param("iss", $partnerAccountId, $startDate, $endDate);
             $stmt_inv_pays->execute();
-            foreach(db_stmt_to_assoc_array($stmt_inv_pays) as $pay) {
+            foreach ($this->statementRows(db_stmt_to_assoc_array($stmt_inv_pays)) as $pay) {
                 if (isset($processed_payment_ids[$pay['id']])) continue; // already in statement
                 if ($pay['invoiceType'] === 'return') {
                     // فاکتور مرجوعی
@@ -2361,7 +2497,7 @@ class ReportModel {
             $stmt_expenses = $this->conn->prepare("SELECT * FROM expenses WHERE account_id = ? AND date BETWEEN ? AND ?");
             $stmt_expenses->bind_param("iss", $partnerAccountId, $startDate, $endDate);
             $stmt_expenses->execute();
-            foreach(db_stmt_to_assoc_array($stmt_expenses) as $exp) {
+            foreach ($this->statementRows(db_stmt_to_assoc_array($stmt_expenses)) as $exp) {
                 $desc = "هزینه از حساب شخصی: " . $exp['category'] . ($exp['description'] ? ' (' . $exp['description'] . ')' : '');
                 $transactions[] = [ 'date' => $exp['date'], 'description' => $desc, 'debit' => 0, 'credit' => floatval($exp['amount']), 'unix_timestamp' => strtotime($exp['date']), 'refId' => $exp['id'], 'refType' => 'expense', 'is_consignment' => 0 ];
             }
@@ -2377,7 +2513,7 @@ class ReportModel {
             ");
             $stmt_direct_person_pays->bind_param("iss", $partnerAccountId, $startDate, $endDate);
             $stmt_direct_person_pays->execute();
-            foreach (db_stmt_to_assoc_array($stmt_direct_person_pays) as $pay) {
+            foreach ($this->statementRows(db_stmt_to_assoc_array($stmt_direct_person_pays)) as $pay) {
                 $debit = 0; $credit = 0; $isUnrealized = false;
                 $label = ($pay['person_type'] === 'supplier') ? 'تأمین‌کننده' : 'مشتری';
                 $personName = $pay['supplierName'] ?: ($pay['customerName'] ?: '');
@@ -2426,7 +2562,7 @@ class ReportModel {
         );
         $stmt_linked_expenses->bind_param('isiss', $entityId, $personType, $personId, $startDate, $endDate);
         $stmt_linked_expenses->execute();
-        foreach (db_stmt_to_assoc_array($stmt_linked_expenses) as $exp) {
+        foreach ($this->statementRows(db_stmt_to_assoc_array($stmt_linked_expenses)) as $exp) {
             $desc = 'هزینه: ' . $exp['category'] . ($exp['description'] ? ' - ' . $exp['description'] : '');
             // Same direction as a cash payment to the person (reduces what we owe / increases receivable)
             $transactions[] = [
@@ -2450,7 +2586,7 @@ class ReportModel {
         if ($stmt_linked_incomes) {
             $stmt_linked_incomes->bind_param('isiss', $entityId, $personType, $personId, $startDate, $endDate);
             $stmt_linked_incomes->execute();
-            foreach (db_stmt_to_assoc_array($stmt_linked_incomes) as $inc) {
+            foreach ($this->statementRows(db_stmt_to_assoc_array($stmt_linked_incomes)) as $inc) {
                 $desc = 'درآمد: ' . $inc['category'] . ($inc['description'] ? ' - ' . $inc['description'] : '');
                 $transactions[] = [
                     'date' => $inc['date'],
@@ -2480,6 +2616,7 @@ class ReportModel {
         }
 
         usort($transactions, function($a, $b) { return $a['unix_timestamp'] - $b['unix_timestamp']; });
+        $transactions = $this->groupStatementChecks($transactions, $showInvoiceDetails);
 
         $openingBalance = 0.0;
         if (!$omitOpeningRow) {

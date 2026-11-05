@@ -1,58 +1,63 @@
 <!-- /templates/section_quotations.php -->
 <div class="tab-pane fade" id="quotations" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4>پیش فاکتورها</h4>
-        <button class="btn btn-primary" id="add-quotation-btn"><i class="bi bi-plus-circle me-2"></i>ایجاد پیش فاکتور جدید</button>
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">پیش فاکتورها</h4>
+            <p class="ui-page-sub">پیشنهاد قیمت به مشتری؛ با یک کلیک به فاکتور فروش تبدیل می‌شود</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-primary" id="add-quotation-btn"><i class="bi bi-plus-lg"></i>پیش فاکتور جدید</button>
+        </div>
     </div>
-    <div class="row align-items-center mb-3">
-        <div class="col-md-7">
-            <div class="input-group search-box">
-                <span class="input-group-text"><i class="bi bi-search"></i></span>
+
+    <div class="ui-panel">
+        <div class="ui-toolbar">
+            <div class="ui-search search-box">
+                <i class="bi bi-search"></i>
                 <input type="text" class="form-control table-search" data-table="quotations" placeholder="جستجو در شماره پیش فاکتور، نام مشتری، مبالغ...">
             </div>
-        </div>
-        <div class="col-md-2">
-            <select class="form-select" id="quotation-status-filter">
-                <option value="">همه وضعیت‌ها</option>
-                <option value="pending">در انتظار</option>
-                <option value="converted">تبدیل شده</option>
-                <option value="cancelled">لغو شده</option>
-                <option value="expired">منقضی شده</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <div class="input-group">
-                <label class="input-group-text">نمایش</label>
-                <select class="form-select pagination-limit-select" data-table="quotations">
-                    <option value="10" selected>10</option>
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                    <option value="-1">همه</option>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="quotation-status-filter"><i class="bi bi-funnel"></i></label>
+                <select class="form-select" id="quotation-status-filter">
+                    <option value="">همه وضعیت‌ها</option>
+                    <option value="pending">در انتظار</option>
+                    <option value="converted">تبدیل شده</option>
+                    <option value="cancelled">لغو شده</option>
+                    <option value="expired">منقضی شده</option>
                 </select>
-                <span class="input-group-text">ردیف</span>
+            </div>
+            <div class="ui-toolbar-end">
+                <label class="ui-limit" for="quotations-limit-select">نمایش
+                    <select id="quotations-limit-select" class="form-select pagination-limit-select form-select-sm" data-table="quotations">
+                        <option value="10" selected>10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="-1">همه</option>
+                    </select>
+                ردیف</label>
             </div>
         </div>
+        <div class="table-responsive">
+            <table class="table table-hover" id="quotations-table">
+                <thead>
+                    <tr>
+                        <th class="sortable-header" data-table="quotations" data-sort-by="id"># <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="quotations" data-sort-by="date">تاریخ <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="quotations" data-sort-by="valid_until">اعتبار تا <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="quotations" data-sort-by="customerName">مشتری <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="quotations" data-sort-by="totalAmount">مبلغ کل <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="quotations" data-sort-by="discount">تخفیف <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="quotations" data-sort-by="netAmount">مبلغ نهایی <span class="sort-indicator"></span></th>
+                        <th class="sortable-header" data-table="quotations" data-sort-by="status">وضعیت <span class="sort-indicator"></span></th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="quotations-table-body"></tbody>
+            </table>
+        </div>
+        <div class="pagination-container" data-table="quotations"></div>
     </div>
-    <div class="table-responsive">
-        <table class="table table-striped table-hover" id="quotations-table">
-            <thead>
-                <tr>
-                    <th class="sortable-header" data-table="quotations" data-sort-by="id"># <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="quotations" data-sort-by="date">تاریخ <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="quotations" data-sort-by="valid_until">اعتبار تا <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="quotations" data-sort-by="customerName">مشتری <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="quotations" data-sort-by="totalAmount">مبلغ کل <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="quotations" data-sort-by="discount">تخفیف <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="quotations" data-sort-by="netAmount">مبلغ نهایی <span class="sort-indicator"></span></th>
-                    <th class="sortable-header" data-table="quotations" data-sort-by="status">وضعیت <span class="sort-indicator"></span></th>
-                    <th>عملیات</th>
-                </tr>
-            </thead>
-            <tbody id="quotations-table-body"></tbody>
-        </table>
-    </div>
-    <div class="pagination-container" data-table="quotations"></div>
 </div>
 
 <!-- Quotation Modal -->

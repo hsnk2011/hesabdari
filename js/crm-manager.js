@@ -615,13 +615,36 @@ const CrmManager = (function () {
         else $hint.addClass('d-none');
     }
 
+    // Why activation failed, in words the user can act on.
+    const PUSH_FAIL = {
+        unsupported: 'این مرورگر نوتیفیکیشن را پشتیبانی نمی‌کند.',
+        dismissed: 'اجازه نوتیفیکیشن داده نشد. دوباره بزنید و در پنجره مرورگر «Allow / اجازه» را انتخاب کنید.',
+        denied: 'نوتیفیکیشن برای این سایت در تنظیمات مرورگر مسدود است. از آیکون قفل کنار آدرس سایت، Notifications را روی Allow بگذارید و صفحه را دوباره باز کنید.',
+        sw: 'بخش آفلاین برنامه (Service Worker) روی این مرورگر راه نیفتاد. صفحه را یک بار کامل رفرش کنید (Ctrl+F5) و دوباره امتحان کنید.',
+        'server-key': 'سرور کلید نوتیفیکیشن را نداد.',
+        'push-service': 'مرورگر نتوانست به سرویس نوتیفیکیشن خودش وصل شود. کروم برای این کار به سرویس گوگل (FCM) نیاز دارد که در ایران بدون فیلترشکن معمولاً در دسترس نیست؛ با Microsoft Edge یا Firefox امتحان کنید، یا فیلترشکن را هنگام فعال‌سازی روشن کنید.',
+        'server-save': 'ثبت این دستگاه روی سرور انجام نشد.',
+    };
+
     async function enablePush() {
-        const ok = await Pwa.enablePush();
-        if (ok) {
+        const res = await Pwa.enablePush();
+        if (res && res.ok) {
             UI.showSuccess('نوتیفیکیشن روی این دستگاه فعال شد.');
-            Api.call('push_test');
+            const test = await Api.call('push_test', {}, false);
+            if (test && test.error) UI.showInfo('دستگاه ثبت شد ولی ارسال نوتیفیکیشن آزمایشی انجام نشد: ' + test.error);
         } else {
-            UI.showError('فعال‌سازی نوتیفیکیشن انجام نشد.');
+            const reason = (res && res.reason) || 'push-service';
+            const detail = (res && res.detail) || '';
+            const msg = (PUSH_FAIL[reason] || 'فعال‌سازی نوتیفیکیشن انجام نشد.') + (detail && reason.startsWith('server') ? ' (' + detail + ')' : '');
+            if (window.toastr) toastr.error(msg, 'فعال‌سازی نوتیفیکیشن', { timeOut: 15000, extendedTimeOut: 5000 });
+            else UI.showError(msg);
+            // Leave a trace in «لاگ فنی / خطاها» with the browser's own words.
+            if (typeof AppClientLogger !== 'undefined' && typeof AppClientLogger.report === 'function') {
+                AppClientLogger.report('WARNING', 'push activation failed: ' + reason, {
+                    component: 'push',
+                    extra: { detail, userAgent: navigator.userAgent, permission: window.Notification ? Notification.permission : 'n/a' },
+                });
+            }
         }
         refreshPushButton();
     }

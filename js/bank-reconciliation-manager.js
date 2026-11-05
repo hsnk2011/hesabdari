@@ -21,9 +21,32 @@ const BankReconciliationManager = (() => {
     };
 
     /** Mirror of BankImport::buildBankDetailSnippet / composeEnrichedDescription */
-    function buildBankDetailSnippet(bankItem) {
+    // Text normalised for "is it already there" checks: Latin digits, ی/ک, single spaces.
+    function bankComparable(text) {
+        return String(text || '')
+            .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+            .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+            .replace(/ي/g, 'ی').replace(/ك/g, 'ک')
+            .replace(/\s+/g, ' ').trim();
+    }
+
+    function bankTextHas(haystack, value) {
+        const v = bankComparable(value);
+        return v !== '' && bankComparable(haystack).indexOf(v) !== -1;
+    }
+
+    // Parts the description (existing) or an earlier part already shows are left
+    // out, so the bank text, the counterparty and numbers appear once.
+    function buildBankDetailSnippet(bankItem, existing = '') {
         if (!bankItem) return '';
         const parts = [];
+        let seen = String(existing || '');
+        const add = (label, value) => {
+            const v = String(value || '').trim();
+            if (!v || bankTextHas(seen, v)) return;
+            parts.push(label + ': ' + v);
+            seen += ' ' + v;
+        };
         const date = String(bankItem.transaction_date || '').trim();
         if (date) parts.push('تاریخ: ' + UI.gregorianToPersian(date));
         const time = String(bankItem.transaction_time || '').trim();
@@ -32,20 +55,13 @@ const BankReconciliationManager = (() => {
         if (Math.abs(amt) > 0.0001) {
             parts.push('مبلغ بانک: ' + Math.abs(amt).toLocaleString('en-US') + (amt >= 0 ? ' (واریز)' : ' (برداشت)'));
         }
-        const desc = String(bankItem.description || '').trim();
-        if (desc) parts.push('شرح: ' + desc);
-        const cp = String(bankItem.counterparty || '').trim();
-        if (cp) parts.push('طرف: ' + cp);
-        const track = String(bankItem.tracking_number || '').trim();
-        if (track) parts.push('پیگیری: ' + track);
-        const ref = String(bankItem.reference_number || '').trim();
-        if (ref && ref !== track) parts.push('مرجع: ' + ref);
-        const doc = String(bankItem.document_number || '').trim();
-        if (doc) parts.push('سند: ' + doc);
-        const branch = String(bankItem.branch || '').trim();
-        if (branch) parts.push('شعبه: ' + branch);
-        const note = String(bankItem.note || '').trim();
-        if (note) parts.push('یادداشت: ' + note);
+        add('شرح', bankItem.description);
+        add('طرف', bankItem.counterparty);
+        add('پیگیری', bankItem.tracking_number);
+        add('مرجع', bankItem.reference_number);
+        add('سند', bankItem.document_number);
+        add('شعبه', bankItem.branch);
+        add('یادداشت', bankItem.note);
         return parts.join(' | ');
     }
 
@@ -53,7 +69,7 @@ const BankReconciliationManager = (() => {
         const base = String(oldDesc || '').trim();
         const marker = '[جزئیات بانک]';
         if (base.indexOf(marker) !== -1) return base;
-        const snippet = buildBankDetailSnippet(bankItem);
+        const snippet = buildBankDetailSnippet(bankItem, base);
         if (!snippet) return base;
         const extra = marker + ' ' + snippet;
         return base === '' ? extra : (base + '\n' + extra);

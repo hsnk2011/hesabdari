@@ -37,39 +37,9 @@ class PriceList extends BaseModel {
         return $this->dimensionArea($dimension) * floatval($price_per_meter);
     }
 
-    /**
-     * Area (m²) for a dimension string. Named dimensions (e.g. «پادری») are
-     * looked up in the `dimension_area_map` setting (JSON); numeric "WxH"
-     * values are multiplied after centimeter normalization, where any side
-     * larger than the `dimension_cm_threshold` setting is treated as cm.
-     */
+    /** Area (m²) for a dimension string; see dimension_area_m2(). */
     private function dimensionArea($dimension) {
-        $mapJson = get_app_setting($this->conn, 'dimension_area_map', '{"پادری":0.4}');
-        $map = json_decode((string)$mapJson, true);
-        if (!is_array($map)) {
-            $map = ['پادری' => 0.4];
-        }
-        if (isset($map[$dimension])) {
-            return floatval($map[$dimension]);
-        }
-        $threshold = floatval(get_app_setting($this->conn, 'dimension_cm_threshold', 15));
-        if ($threshold <= 0) {
-            $threshold = 15;
-        }
-        $parts = explode('x', str_replace('*', 'x', $dimension));
-        if (count($parts) === 2) {
-            $width = floatval($parts[0]);
-            $height = floatval($parts[1]);
-            if ($width > 0 && $height > 0) {
-                // Convert each side independently: a value above the threshold
-                // can only be centimeters, so "2x200" becomes 2m x 2m instead
-                // of the whole pair being scaled together.
-                if ($width > $threshold) $width /= 100;
-                if ($height > $threshold) $height /= 100;
-                return $width * $height;
-            }
-        }
-        return 0;
+        return dimension_area_m2($this->conn, $dimension);
     }
 
     /**
@@ -79,7 +49,7 @@ class PriceList extends BaseModel {
      */
     private function getCalculatedPriceListForCollections($entity_id) {
         // Fetch all collections for the entity
-        $stmt_collections = $this->conn->prepare("SELECT id, name, type, price_per_meter, updated_at FROM `{$this->tableName}` WHERE entity_id = ? ORDER BY name ASC");
+        $stmt_collections = $this->conn->prepare("SELECT id, name, type, price_per_meter, partner_price_per_meter, updated_at FROM `{$this->tableName}` WHERE entity_id = ? ORDER BY name ASC");
         $stmt_collections->bind_param("i", $entity_id);
         $stmt_collections->execute();
         $collections = db_stmt_to_assoc_array($stmt_collections);
@@ -147,13 +117,13 @@ class PriceList extends BaseModel {
      */
     private function getCalculatedPriceListForSingleProducts($entity_id) {
         $stmt_products = $this->conn->prepare("
-            SELECT p.id, p.name, p.price as price_per_meter, p.updated_at, ii.dimensions
+            SELECT p.id, p.name, p.price as price_per_meter, p.partner_price as partner_price_per_meter, p.updated_at, ii.dimensions
             FROM products p
             JOIN inventory_items ii ON p.id = ii.product_id
             WHERE p.entity_id = ?
               AND p.collection_id IS NULL
               AND ii.status IN ('in_stock', 'returned')
-            GROUP BY p.id, p.name, p.price, p.updated_at, ii.dimensions
+            GROUP BY p.id, p.name, p.price, p.partner_price, p.updated_at, ii.dimensions
             ORDER BY p.name, ii.dimensions
         ");
         $stmt_products->bind_param("i", $entity_id);
@@ -174,6 +144,7 @@ class PriceList extends BaseModel {
                     'id' => $pd['id'],
                     'name' => $pd['name'],
                     'price_per_meter' => $pd['price_per_meter'],
+                    'partner_price_per_meter' => $pd['partner_price_per_meter'],
                     'updated_at' => $pd['updated_at'],
                     'dimensions' => [],
                     'has_no_price' => empty($pd['price_per_meter']) || floatval($pd['price_per_meter']) == 0
@@ -299,23 +270,33 @@ class PriceList extends BaseModel {
      * Set specific price for collection or product
      * @param int $id ID of collection or product
      * @param string $type 'collection' or 'product'
-     * @param float $price New price per meter
+     * @param float|null $price New price per meter (null/'' clears a partner price)
+     * @param string $field 'sale' (price list) or 'partner' (قیمت همکاری)
      * @return array Result with success status
      */
-    public function setPrice($id, $type, $price) {
+    public function setPrice($id, $type, $price, $field = 'sale') {
         $entity_id = $_SESSION['current_entity_id'];
-        
-        $price = floatval(str_replace(',', '', $price));
-        if ($price < 0) {
-            return ['success' => false, 'error' => 'قیمت نمی‌تواند منفی باشد'];
-        }
-        
-        if ($type === 'collection') {
-            $stmt = $this->conn->prepare("UPDATE `product_collections` SET price_per_meter = ?, updated_at = NOW() WHERE id = ? AND entity_id = ?");
+        $isPartner = $field === 'partner';
+
+        $raw = trim(str_replace(',', '', (string)$price));
+        if ($isPartner && ($raw === '' || floatval($raw) == 0)) {
+            // No own partner price: the share link's partner percentage applies.
+            $price = null;
         } else {
-            $stmt = $this->conn->prepare("UPDATE `products` SET price = ?, updated_at = NOW() WHERE id = ? AND entity_id = ?");
+            $price = floatval($raw);
+            if ($price < 0) {
+                return ['success' => false, 'error' => 'قیمت نمی‌تواند منفی باشد'];
+            }
         }
-        
+
+        if ($type === 'collection') {
+            $column = $isPartner ? 'partner_price_per_meter' : 'price_per_meter';
+            $stmt = $this->conn->prepare("UPDATE `product_collections` SET `{$column}` = ?, updated_at = NOW() WHERE id = ? AND entity_id = ?");
+        } else {
+            $column = $isPartner ? 'partner_price' : 'price';
+            $stmt = $this->conn->prepare("UPDATE `products` SET `{$column}` = ?, updated_at = NOW() WHERE id = ? AND entity_id = ?");
+        }
+
         $stmt->bind_param("dii", $price, $id, $entity_id);
         
         if (!$stmt->execute()) {

@@ -561,9 +561,10 @@ const UI = (function () {
         options = Object.assign({ showToolbar: false }, options);
         
         // Build items table - escape all user content to prevent XSS
-        // Serial / meter columns stay in the DOM; body.hide-* toggles them live.
+        // Serial / meter / area columns stay in the DOM; body.hide-* toggles them live.
         const showSerialColumn = settings.show_serial_column !== false;
         const showMeterColumn = settings.show_meter_column === true;
+        const showAreaColumn = settings.show_area_column === true;
         const serialLabelsForPrint = (item) => {
             if (item.is_service == 1) return [];
             const current = Array.isArray(item.serial_labels) ? item.serial_labels : [];
@@ -576,16 +577,21 @@ const UI = (function () {
             });
             return parts;
         };
-        const meterPriceForPrint = (item, isService) => {
-            if (isService) return null;
+        const itemAreaForPrint = (item, isService) => {
+            if (isService) return 0;
             const dims = String(item.dimensions || '').trim().toLowerCase().replace(/\*/g, 'x').replace(/×/g, 'x');
-            const area = dimensionArea(dims);
+            return dimensionArea(dims);
+        };
+        const formatArea = (area) => Number(area.toFixed(2)).toLocaleString('fa-IR');
+        const meterPriceForPrint = (item, isService) => {
+            const area = itemAreaForPrint(item, isService);
             const unitPrice = parseFloat(item.unitPrice) || 0;
             if (!(area > 0) || !(unitPrice > 0)) return null;
             return Math.round(unitPrice / area);
         };
         let itemsHtml = '';
         let totalQuantity = 0;
+        let totalArea = 0;
         (invoice.items || []).forEach((item, idx) => {
             const itemTotal = (item.quantity || 0) * (item.unitPrice || 0);
             totalQuantity += parseInt(item.quantity) || 0;
@@ -595,6 +601,9 @@ const UI = (function () {
                 : (item.name || item.productName || '-');
             const itemDims = isService ? '-' : (item.dimensions || '-');
             const meterPrice = meterPriceForPrint(item, isService);
+            // Row area (m²) = area of one piece × quantity
+            const rowArea = itemAreaForPrint(item, isService) * (parseFloat(item.quantity) || 0);
+            totalArea += rowArea;
             const rawImage = !isService ? (item.image_url || item.primary_image || item.primary_full_image || '') : '';
             let imageSrc = '';
             if (rawImage) {
@@ -616,6 +625,7 @@ const UI = (function () {
                 <td>${escapeHtml(itemDims)}</td>
                 <td class="col-serial">${serialLabelsForPrint(item).map(escapeHtml).join('<br>') || '-'}</td>
                 <td>${item.quantity || 0}</td>
+                <td class="col-area">${rowArea > 0 ? formatArea(rowArea) : '-'}</td>
                 <td>${formatCurrency(item.unitPrice)}</td>
                 <td class="col-meter">${meterPrice != null ? formatCurrency(meterPrice) : '-'}</td>
                 <td>${formatCurrency(itemTotal)}</td>
@@ -686,6 +696,7 @@ const UI = (function () {
             'print-layout-' + printTemplate,
             showSerialColumn ? '' : 'hide-serial',
             showMeterColumn ? '' : 'hide-meter',
+            showAreaColumn ? '' : 'hide-area',
             settings.show_logo ? '' : 'hide-logo',
             settings.show_company_info ? '' : 'hide-company',
             settings.show_payment_info ? '' : 'hide-pay',
@@ -740,6 +751,7 @@ const UI = (function () {
 
         const totalsRowsHtml = `
             <tr><td>تعداد کل:</td><td>${totalQuantity}</td></tr>
+            ${totalArea > 0 ? `<tr class="col-area"><td>متراژ کل (م²):</td><td>${formatArea(totalArea)}</td></tr>` : ''}
             <tr><td>جمع کل:</td><td>${formatCurrency(invoice.totalAmount)}</td></tr>
             ${(parseFloat(invoice.discount) || 0) > 0.01 ? `<tr><td>تخفیف:</td><td>${formatCurrency(invoice.discount || 0)}</td></tr>` : ''}
             ${taxAmount > 0 ? `<tr><td>مالیات (${invoice.tax_rate || 0}%):</td><td>${formatCurrency(taxAmount)}</td></tr>` : ''}
@@ -770,6 +782,7 @@ const UI = (function () {
         const layoutCss = `
         body.hide-serial .col-serial { display: none !important; }
         body.hide-meter .col-meter { display: none !important; }
+        body.hide-area .col-area { display: none !important; }
         body.hide-logo .opt-logo { display: none !important; }
         body.hide-company .opt-company { display: none !important; }
         body.hide-pay .opt-payinfo { display: none !important; }
@@ -1063,6 +1076,7 @@ const UI = (function () {
             </label>
             <label class="opt"><input type="checkbox" id="opt-serial"${showSerialColumn ? ' checked' : ''}> شناسه انبار</label>
             <label class="opt"><input type="checkbox" id="opt-meter"${showMeterColumn ? ' checked' : ''}> متری</label>
+            <label class="opt"><input type="checkbox" id="opt-area"${showAreaColumn ? ' checked' : ''}> مساحت</label>
             <label class="opt"><input type="checkbox" id="opt-logo"${settings.show_logo ? ' checked' : ''}> لوگو</label>
             <label class="opt"><input type="checkbox" id="opt-company"${settings.show_company_info ? ' checked' : ''}> اطلاعات فروشگاه</label>
             <label class="opt"><input type="checkbox" id="opt-pay"${settings.show_payment_info ? ' checked' : ''}> اطلاعات پرداخت</label>
@@ -1103,7 +1117,7 @@ const UI = (function () {
     </div>
     <script>
     window.__PRINT_INVOICE__ = ${JSON.stringify(invoice).replace(/</g, '\\u003c')};
-    window.__PRINT_SETTINGS__ = ${JSON.stringify(Object.assign({}, settings, { show_serial_column: showSerialColumn, show_meter_column: showMeterColumn, print_template: printTemplate })).replace(/</g, '\\u003c')};
+    window.__PRINT_SETTINGS__ = ${JSON.stringify(Object.assign({}, settings, { show_serial_column: showSerialColumn, show_meter_column: showMeterColumn, show_area_column: showAreaColumn, print_template: printTemplate })).replace(/</g, '\\u003c')};
     window.__PRINT_TYPE__ = ${JSON.stringify(type)};
     window.__SHOW_PAY_DESC__ = ${showPayDesc ? 'true' : 'false'};
     window.__INVOICE_META__ = ${JSON.stringify({
@@ -1189,6 +1203,7 @@ const UI = (function () {
             body.classList.add('print-layout-' + tpl);
             body.classList.toggle('hide-serial', !document.getElementById('opt-serial')?.checked);
             body.classList.toggle('hide-meter', !document.getElementById('opt-meter')?.checked);
+            body.classList.toggle('hide-area', !document.getElementById('opt-area')?.checked);
             body.classList.toggle('hide-logo', !document.getElementById('opt-logo')?.checked);
             body.classList.toggle('hide-company', !document.getElementById('opt-company')?.checked);
             body.classList.toggle('hide-pay', !document.getElementById('opt-pay')?.checked);
@@ -1198,6 +1213,7 @@ const UI = (function () {
             const settings = Object.assign({}, window.__PRINT_SETTINGS__ || {});
             settings.show_serial_column = !!document.getElementById('opt-serial')?.checked;
             settings.show_meter_column = !!document.getElementById('opt-meter')?.checked;
+            settings.show_area_column = !!document.getElementById('opt-area')?.checked;
             settings.show_logo = !!document.getElementById('opt-logo')?.checked;
             settings.show_company_info = !!document.getElementById('opt-company')?.checked;
             settings.show_payment_info = !!document.getElementById('opt-pay')?.checked;
@@ -1509,7 +1525,7 @@ const UI = (function () {
     window.InvoicePreviewUI = InvoicePreviewUI;
     document.getElementById('sms-template-key')?.addEventListener('change', function(){ InvoicePreviewUI.reloadSmsPreview(); });
     document.getElementById('sms-include-link')?.addEventListener('change', function(){ InvoicePreviewUI.reloadSmsPreview(); });
-    ['print-template-select', 'opt-serial', 'opt-meter', 'opt-logo', 'opt-company', 'opt-pay', 'opt-sign', 'opt-pay-desc'].forEach(function (id) {
+    ['print-template-select', 'opt-serial', 'opt-meter', 'opt-area', 'opt-logo', 'opt-company', 'opt-pay', 'opt-sign', 'opt-pay-desc'].forEach(function (id) {
         document.getElementById(id)?.addEventListener('change', function () { InvoicePreviewUI.applyPrintOptions(); });
     });
     </script>
@@ -1547,6 +1563,7 @@ const UI = (function () {
                 <th style="width:80px">ابعاد</th>
                 <th class="col-serial" style="width:120px">شناسه انبار</th>
                 <th style="width:60px">تعداد</th>
+                <th class="col-area" style="width:80px">مساحت (م²)</th>
                 <th style="width:100px">قیمت واحد</th>
                 <th class="col-meter" style="width:100px">قیمت متری</th>
                 <th style="width:100px">مبلغ کل</th>
@@ -2344,6 +2361,8 @@ const UI = (function () {
 
     // === Dark Mode Toggle ===
     function initDarkMode() {
+        // The redesigned UI has its own themes (js/theme.js); this toggle is classic-only.
+        if (window.UITheme && UITheme.isModern()) return;
         const themeKey = (typeof AppConfig !== 'undefined' && AppConfig.STORAGE_KEYS && AppConfig.STORAGE_KEYS.THEME) || 'theme';
         const savedTheme = localStorage.getItem(themeKey) || 'light';
         applyTheme(savedTheme);

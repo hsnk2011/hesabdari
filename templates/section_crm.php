@@ -1,9 +1,13 @@
 <div class="tab-pane fade" id="crm" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <h4 class="mb-0"><i class="bi bi-kanban me-2"></i>میز کار</h4>
-        <div class="d-flex flex-wrap gap-2">
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">میز کار</h4>
+            <p class="ui-page-sub">کارهای من، پیام‌ها، پروژه‌ها، کارتابل و پیگیری مشتری‌ها</p>
+        </div>
+        <div class="ui-page-actions">
+            <button class="btn btn-outline-success d-none" id="crm-push-btn"><i class="bi bi-bell"></i>فعال‌سازی نوتیفیکیشن روی این گوشی</button>
             <div class="dropdown">
-                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-plus-circle me-1"></i>جدید</button>
+                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-plus-lg"></i>جدید</button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li data-permission="manage_projects"><button class="dropdown-item" type="button" id="work-new-project-btn"><i class="bi bi-folder-plus me-2"></i>پروژه</button></li>
                     <li data-permission="use_projects"><button class="dropdown-item" type="button" id="work-new-meeting-btn"><i class="bi bi-calendar-plus me-2"></i>جلسه</button></li>
@@ -15,7 +19,6 @@
                     <li data-permission="use_crm"><button class="dropdown-item" type="button" id="crm-new-lead-btn"><i class="bi bi-person-plus me-2"></i>سرنخ (مشتری بالقوه)</button></li>
                 </ul>
             </div>
-            <button class="btn btn-outline-success d-none" id="crm-push-btn"><i class="bi bi-bell me-1"></i>فعال‌سازی نوتیفیکیشن روی این گوشی</button>
         </div>
     </div>
     <div class="alert alert-info py-2 small d-none" id="crm-push-hint"></div>

@@ -1,0 +1,10 @@
+# Block all direct HTTP access to backup files (Apache 2.4 syntax).
+# The application reads these files via the filesystem, so this does not
+# affect backup listing/restore/download functionality.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

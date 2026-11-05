@@ -65,6 +65,7 @@ const CheckManager = (function () {
             }
             if (c.type === 'received' && c.status === 'endorsed') {
                 lifecycle.push(`<li><a class="dropdown-item btn-return-endorsed-check" href="#" data-id="${c.id}"><i class="bi bi-arrow-counterclockwise me-1"></i>عودت چک خرج‌شده</a></li>`);
+                lifecycle.push(`<li><a class="dropdown-item btn-edit-transfer-group" href="#" data-id="${c.id}"><i class="bi bi-collection me-1"></i>ویرایش گروه راس‌گیری / انتقال</a></li>`);
             }
             if (c.status === 'cashed') {
                 lifecycle.push(`<li><a class="dropdown-item btn-undo-cash-check" href="#" data-id="${c.id}"><i class="bi bi-x-circle me-1"></i>${c.type === 'received' ? 'لغو وصول' : 'لغو پاس'}</a></li>`);
@@ -649,7 +650,7 @@ ${timeline ? `<h3>مسیر چک</h3><table class="timeline"><thead><tr><th>تا�
         lastHistoryCheckId = checkId;
         lastHistoryTransferGroupId = null;
         lastHistoryEndorsePaymentId = null;
-        $('#print-transfer-group-btn, #edit-transfer-payment-btn').addClass('d-none');
+        $('#print-transfer-group-btn, #edit-transfer-payment-btn, #edit-transfer-group-btn').addClass('d-none');
         $('#check-history-body').html('<div class="text-center text-muted py-4">در حال بارگذاری...</div>');
         $('#checkHistoryModal').modal('show');
         UI.showLoader();
@@ -663,12 +664,128 @@ ${timeline ? `<h3>مسیر چک</h3><table class="timeline"><thead><tr><th>تا�
         lastHistoryTransferGroupId = check.transfer_group_id || check.transfer_group?.transfer_group_id || null;
         lastHistoryEndorsePaymentId = check.endorse_payment_id || null;
         if (lastHistoryTransferGroupId && (check.transfer_group?.checks?.length || 0) > 0) {
-            $('#print-transfer-group-btn').removeClass('d-none');
+            $('#print-transfer-group-btn, #edit-transfer-group-btn').removeClass('d-none');
         }
         if (lastHistoryEndorsePaymentId || check.status === 'endorsed') {
             $('#edit-transfer-payment-btn').removeClass('d-none');
         }
         $('#check-history-body').html(renderHistoryHtml(check));
+    }
+
+    // ---- ویرایش گروه راس‌گیری / انتقال گروهی ----
+    let editGroup = null; // { id, commonDescription, checks, removeIds:Set }
+
+    function renderTransferGroupEditor() {
+        const body = $('#edit-transfer-group-body').empty();
+        let total = 0;
+        editGroup.checks.forEach(c => {
+            const removed = editGroup.removeIds.has(c.id);
+            if (!removed && !c.reversed) total += parseFloat(c.amount) || 0;
+            const btn = c.removable
+                ? `<button type="button" class="btn btn-sm ${removed ? 'btn-outline-secondary' : 'btn-outline-danger'} btn-toggle-group-check" data-check-id="${c.id}" title="${removed ? 'بازگرداندن به گروه' : 'خارج کردن از گروه'}"><i class="bi ${removed ? 'bi-arrow-counterclockwise' : 'bi-x-lg'}"></i></button>`
+                : `<span class="text-muted small" title="فقط چک‌هایی که هنوز «واگذار شده» هستند قابل حذف از گروه‌اند">—</span>`;
+            body.append(`<tr class="${removed ? 'table-danger text-decoration-line-through' : (c.reversed ? 'text-muted' : '')}">
+                <td>${UI.escapeHtml(c.checkNumber || '-')}</td>
+                <td>${UI.escapeHtml(c.bankName || '-')}</td>
+                <td>${c.dueDate ? UI.gregorianToPersian(c.dueDate) : '-'}</td>
+                <td>${UI.formatCurrency(c.amount || 0)}</td>
+                <td>${UI.escapeHtml(c.reversed ? 'عودت/برگشت شده' : (c.status_label || c.status || '-'))}</td>
+                <td>${btn}</td>
+            </tr>`);
+        });
+        $('#edit-transfer-group-add').find('option:selected').each(function () {
+            total += parseFloat($(this).data('amount')) || 0;
+        });
+        $('#edit-transfer-group-total').text(UI.formatCurrency(total));
+    }
+
+    async function openTransferGroupEditor({ transferGroupId = null, checkId = null } = {}) {
+        UI.showLoader();
+        const [group, inHand] = await Promise.all([
+            Api.call('get_check_transfer_group', { transfer_group_id: transferGroupId || undefined, checkId: checkId || undefined }),
+            Api.call('get_paginated_data', {
+                tableName: config.tableName, currentPage: 1, limit: -1, sortBy: 'dueDate', sortOrder: 'ASC', searchTerm: '',
+                filterCheckType: 'received', filterStatus: 'in_hand', filterDue: '', filterRelated: '', filterDueFrom: '', filterDueTo: ''
+            })
+        ]);
+        UI.hideLoader();
+        if (!group?.success || !group.checks?.length) {
+            UI.showError(group?.error || 'این چک در گروه راس‌گیری / انتقال گروهی نیست.');
+            return;
+        }
+
+        editGroup = {
+            id: group.transfer_group_id,
+            commonDescription: group.common_description || '',
+            checks: group.checks,
+            removeIds: new Set()
+        };
+        const modalId = '#editTransferGroupModal';
+        UI.hideModalError(modalId);
+        const dest = group.transferredTo || {};
+        $('#edit-transfer-group-info').text(
+            `مقصد: ${[dest.name, dest.type_label ? `(${dest.type_label})` : ''].filter(Boolean).join(' ') || '-'}`
+            + (group.transfer_date ? ` — تاریخ انتقال: ${UI.gregorianToPersian(group.transfer_date)}` : '')
+        );
+        $('#edit-transfer-group-description').val(editGroup.commonDescription);
+
+        const $add = $('#edit-transfer-group-add');
+        if ($add.data('select2')) $add.select2('destroy');
+        $add.empty();
+        (inHand?.data || []).forEach(c => {
+            const label = `${c.checkNumber} — ${c.bankName || '-'} — ${UI.formatCurrency(c.amount)} — سررسید ${UI.gregorianToPersian(c.dueDate)}`
+                + (c.issuerName ? ` — ${c.issuerName}` : '');
+            $add.append($('<option>').val(c.id).attr('data-amount', c.amount).text(label));
+        });
+        $add.select2({
+            theme: 'bootstrap-5',
+            dir: 'rtl',
+            placeholder: 'جستجوی شماره، بانک یا مبلغ چک...',
+            dropdownParent: $add.parent()
+        });
+
+        renderTransferGroupEditor();
+        $(modalId).modal('show');
+    }
+
+    async function saveTransferGroupEdit() {
+        if (!editGroup) return;
+        const modalId = '#editTransferGroupModal';
+        UI.hideModalError(modalId);
+        const removeCheckIds = Array.from(editGroup.removeIds);
+        const addCheckIds = ($('#edit-transfer-group-add').val() || []).map(Number);
+        const description = ($('#edit-transfer-group-description').val() || '').trim();
+        const descriptionChanged = description !== editGroup.commonDescription.trim();
+        if (!removeCheckIds.length && !addCheckIds.length && !descriptionChanged) {
+            UI.showModalError(modalId, 'تغییری انجام نشده است.');
+            return;
+        }
+        const remaining = editGroup.checks.filter(c => !c.reversed && !editGroup.removeIds.has(c.id)).length + addCheckIds.length;
+        if (remaining === 0) {
+            const ok = await UI.confirm('همه چک‌ها از این انتقال خارج می‌شوند و به «نزد ما» برمی‌گردند؛ یعنی کل انتقال حذف می‌شود. ادامه می‌دهید؟', 'حذف کل انتقال');
+            if (!ok) return;
+        }
+
+        const payload = { transfer_group_id: editGroup.id, addCheckIds, removeCheckIds };
+        if (descriptionChanged) payload.description = description;
+        UI.showLoader();
+        const res = await Api.call('update_check_transfer_group', payload);
+        UI.hideLoader();
+        if (!res?.success) {
+            UI.showModalError(modalId, res?.error || 'ویرایش گروه انتقال ناموفق بود.');
+            return;
+        }
+        $(modalId).modal('hide');
+        const parts = [];
+        if (res.added?.length) parts.push(`${res.added.length} چک افزوده شد`);
+        if (res.removed?.length) parts.push(`${res.removed.length} چک خارج شد`);
+        if (descriptionChanged) parts.push('توضیحات ویرایش شد');
+        UI.showSuccess(`گروه انتقال به‌روزرسانی شد: ${parts.join('، ')}.`);
+        [...addCheckIds, ...removeCheckIds].forEach(id => unselectCheck(id));
+        await App.updateCache(['checks', 'accounts', 'customers', 'suppliers']);
+        load();
+        const tx = App.getManager && App.getManager('transactions');
+        if (tx && typeof tx.load === 'function') tx.load();
     }
 
     async function openPaymentForCheck(checkId, preferType = null) {
@@ -1137,6 +1254,27 @@ ${timeline ? `<h3>مسیر چک</h3><table class="timeline"><thead><tr><th>تا�
                 await openPaymentForCheck(lastHistoryCheckId, 'endorse_check');
             }
         });
+
+        $('#edit-transfer-group-btn').on('click', async function () {
+            if (!lastHistoryTransferGroupId) return;
+            $('#checkHistoryModal').modal('hide');
+            await openTransferGroupEditor({ transferGroupId: lastHistoryTransferGroupId });
+        });
+
+        $('body').on('click', '#checks-table .btn-edit-transfer-group', async function (e) {
+            e.preventDefault();
+            await openTransferGroupEditor({ checkId: $(this).data('id') });
+        });
+
+        $('body').on('click', '#edit-transfer-group-body .btn-toggle-group-check', function () {
+            const id = $(this).data('check-id');
+            if (editGroup.removeIds.has(id)) editGroup.removeIds.delete(id);
+            else editGroup.removeIds.add(id);
+            renderTransferGroupEditor();
+        });
+
+        $('#edit-transfer-group-add').on('change', renderTransferGroupEditor);
+        $('#save-transfer-group-btn').on('click', saveTransferGroupEdit);
 
         $('body').on('click', '#checks-table .btn-edit-payment-from-check', async function () {
             const checkId = $(this).data('check-id');

@@ -189,6 +189,7 @@ const ReportGenerator = (function () {
         const includePendingChecks = $('#include-pending-checks').is(':checked');
         const calculatePendingChecks = $('#calculate-pending-checks').is(':checked');
         const showInvoiceDetails = $('#show-invoice-details').is(':checked');
+        const showBankDetails = $('#show-bank-details').is(':checked');
         const showPreviousBalance = $('#show-previous-balance').is(':checked');
         const includeUndeliveredOrders = $('#include-undelivered-orders').is(':checked');
         const calculateConsignment = $('#calculate-consignment').is(':checked');
@@ -210,6 +211,7 @@ const ReportGenerator = (function () {
             includePendingChecks: includePendingChecks,
             calculatePendingChecks: calculatePendingChecks,
             showInvoiceDetails: showInvoiceDetails,
+            showBankDetails: showBankDetails,
             showPreviousBalance: showPreviousBalance,
             includeUndeliveredOrders: includeUndeliveredOrders,
             calculateConsignment: calculateConsignment,
@@ -620,6 +622,9 @@ const ReportGenerator = (function () {
 
         if (lastReportParams.showInvoiceDetails) {
             params.set('showInvoiceDetails', '1');
+        }
+        if (lastReportParams.showBankDetails) {
+            params.set('showBankDetails', '1');
         }
         if (lastReportParams.includePendingChecks === false) {
             params.set('includePendingChecks', '0');
@@ -1609,6 +1614,25 @@ const ReportGenerator = (function () {
                 descHtml += checkInfo;
             }
             
+            // Checks moved together (one row): list them with «نمایش جزئیات».
+            if (showInvoiceDetails && t.checkGroup && t.checkGroup.length > 0) {
+                const statusLabels = { 'pending': 'در انتظار', 'cashed': 'وصول شده', 'bounced': 'برگشتی', 'endorsed': 'خرج شده' };
+                let groupHtml = '<div class="small text-muted mt-1 border-top pt-1">';
+                groupHtml += '<table class="table table-sm table-borderless mb-0" style="font-size:0.8em"><thead><tr><th>شماره چک</th><th>بانک</th><th>صادرکننده</th><th>سررسید</th><th>مبلغ</th><th>وضعیت</th></tr></thead><tbody>';
+                t.checkGroup.forEach(c => {
+                    groupHtml += `<tr>
+                        <td style="padding:1px 5px">${UI.escapeHtml(String(c.checkNumber || '-'))}</td>
+                        <td style="padding:1px 5px">${UI.escapeHtml(c.bankName || '-')}</td>
+                        <td style="padding:1px 5px">${UI.escapeHtml(c.issuerName || '-')}</td>
+                        <td style="padding:1px 5px">${c.dueDate ? UI.gregorianToPersian(c.dueDate) : '-'}</td>
+                        <td style="padding:1px 5px">${formatCurrency(c.amount)}</td>
+                        <td style="padding:1px 5px">${UI.escapeHtml(statusLabels[c.status] || c.status || '-')}</td>
+                    </tr>`;
+                });
+                groupHtml += '</tbody></table></div>';
+                descHtml += groupHtml;
+            }
+
             // Add invoice items if available and option enabled
             if (showInvoiceDetails && t.items && t.items.length > 0) {
                 let itemsHtml = '<div class="small text-muted mt-1 border-top pt-1">';

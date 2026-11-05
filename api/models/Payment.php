@@ -156,8 +156,11 @@ class Payment extends BaseModel {
         $types = str_repeat('s', count($gids));
         $sql = "SELECT p.id, p.setoff_group_id, p.person_id, p.person_type, p.invoiceId, p.invoiceType,
                        p.transaction_type, p.amount,
-                       COALESCE(s.name, ct.name, cust.name, pr.name) AS person_name
+                       COALESCE(s.name, ct.name, cust.name, pr.name) AS person_name,
+                       COALESCE(si.invoice_number, pinv.invoice_number) AS invoice_number
                 FROM payments p
+                LEFT JOIN sales_invoices si ON p.invoiceType = 'sales' AND p.invoiceId = si.id
+                LEFT JOIN purchase_invoices pinv ON p.invoiceType = 'purchase' AND p.invoiceId = pinv.id
                 LEFT JOIN suppliers s ON p.person_type = 'supplier' AND p.person_id = s.id
                 LEFT JOIN contacts ct ON p.person_type = 'contact' AND p.person_id = ct.id
                 LEFT JOIN customers cust ON p.person_type = 'customer' AND p.person_id = cust.id
@@ -189,6 +192,7 @@ class Payment extends BaseModel {
                 $p['setoff_person_name'] = $other['person_name'] ?? '';
                 $p['setoff_invoice_id'] = $other['invoiceId'] ? (int)$other['invoiceId'] : null;
                 $p['setoff_invoice_type'] = $other['invoiceType'] ?: null;
+                $p['setoff_invoice_number'] = $other['invoice_number'] ?? null;
             }
         }
         unset($p);

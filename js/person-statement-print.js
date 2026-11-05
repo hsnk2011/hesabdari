@@ -51,6 +51,7 @@ const PersonStatementPrint = (function () {
         purchaseReturn: 'مرجوعی خرید',
         payment: 'پرداخت/دریافت',
         check: 'چک',
+        check_group: 'چک',
         expense: 'هزینه',
         income: 'درآمد',
         asset_document: 'دارایی',
@@ -135,8 +136,23 @@ const PersonStatementPrint = (function () {
         return balance >= 0 ? pos : neg;
     }
 
+    // Checks moved together: one line per check (listed only with «نمایش جزئیات»).
+    function checkGroupHtml(t) {
+        if (!t.checkGroup || !t.checkGroup.length) return '';
+        const lines = t.checkGroup.map(c => {
+            const bits = [`چک <bdi>${esc(c.checkNumber || '-')}</bdi>`];
+            if (c.bankName) bits.push(esc(c.bankName));
+            if (c.issuerName) bits.push(esc(c.issuerName));
+            if (c.dueDate) bits.push(`سررسید ${esc(UI.gregorianToPersian(c.dueDate))}`);
+            bits.push(fmt(c.amount));
+            if (c.status) bits.push(esc(STATUS_LABELS[c.status] || c.status));
+            return `<div class="item-line">${bits.join(' — ')}</div>`;
+        }).join('');
+        return `<div class="items opt-items">${lines}</div>`;
+    }
+
     function itemsTableHtml(t) {
-        if (!t.items || !t.items.length) return '';
+        if (!t.items || !t.items.length) return checkGroupHtml(t);
         const lines = t.items.map(item => {
             const isService = item.is_service == 1;
             const name = isService
@@ -203,7 +219,7 @@ const PersonStatementPrint = (function () {
         const personType = params.personType || 'customer';
         const ledger = buildLedger(data, params);
         const currency = UI.getCurrencyLabel();
-        const hasItems = (data.transactions || []).some(t => t.items && t.items.length);
+        const hasItems = (data.transactions || []).some(t => (t.items && t.items.length) || (t.checkGroup && t.checkGroup.length));
         const personLabel = PERSON_LABELS[personType] || 'شخص';
         const closingAbs = Math.abs(ledger.closing);
         const closingLabel = balanceLabel(ledger.closing, ledger.isCustomer, personType);
@@ -335,7 +351,7 @@ body.hide-logo .opt-logo, body.hide-company .co-info, body.hide-sign .signs, bod
     <label><input type="checkbox" data-cls="hide-company" ${settings.show_company_info ? 'checked' : ''}> اطلاعات شرکت</label>
     <label><input type="checkbox" data-cls="hide-type" checked> ستون نوع سند</label>
     <label><input type="checkbox" data-cls="hide-doc" checked> ستون شماره سند</label>
-    ${hasItems ? '<label><input type="checkbox" data-cls="hide-items" checked> جزئیات اقلام</label>' : ''}
+    ${hasItems ? '<label><input type="checkbox" data-cls="hide-items" checked> جزئیات اقلام و چک‌ها</label>' : ''}
     <label><input type="checkbox" data-cls="hide-sign" ${settings.show_signature_line ? 'checked' : ''}> محل امضا</label>
     <label><input type="checkbox" data-cls="compact"> چاپ فشرده</label>
     <span class="spacer"></span>

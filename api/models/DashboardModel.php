@@ -17,9 +17,14 @@ class DashboardModel {
         $salesWindowDays = defined('DASHBOARD_SALES_WINDOW_DAYS') ? DASHBOARD_SALES_WINDOW_DAYS : 30;
         $thirty_days_ago = date('Y-m-d', strtotime("-{$salesWindowDays} days"));
         $today = date('Y-m-d');
+        // First day of the current Jalali month, for the «از اول ماه» sales figure.
+        $jalaliToday = explode('/', gregorian_to_jalali($today));
+        $monthStart = jalali_to_gregorian($jalaliToday[0], $jalaliToday[1], 1) ?: $today;
         
         $output = [
             'salesLast30Days' => $this->getSalesLast30Days($thirty_days_ago, $entityId),
+            'salesMonthToDate' => $this->getSalesLast30Days($monthStart, $entityId),
+            'salesMonthStart' => $jalaliToday[0] . '/' . $jalaliToday[1] . '/01',
             'topIndebtedSuppliers' => $this->getTopIndebtedSuppliers($entityId),
             'unsettledCustomers' => $this->getUnsettledCustomers($entityId),
             'expensesByCategory' => $this->getExpensesByCategory($entityId),

@@ -1,0 +1,18 @@
+---
+description: Terminology for inventory serial IDs (شناسه انبار)
+globs:
+  - "**/*.{php,js,md}"
+alwaysApply: true
+---
+
+# شناسه انبار = `inventory_items.serial_id`
+
+When the user or UI says **شناسه انبار** / **شناسه** on warehouse inventory:
+
+- **Means:** `inventory_items.serial_id` — values like `INV-001266`
+- **Does NOT mean:** `warehouses.id`, `warehouse_id`, or `products.id`
+
+Shown in product modal → tab «موجودی انبار» → column «شناسه».
+Also used on stocktaking physical count print sheets (`serial_ids` from snapshot).
+
+If `serial_id` is empty, fallback display is `INV-` + zero-padded `inventory_items.id`.

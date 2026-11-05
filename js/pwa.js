@@ -327,29 +327,43 @@
       .then(function (sub) { return sub ? 'on' : 'off'; })
       .catch(function () { return 'off'; });
   }
-  // Subscribes this device and registers it on the server. Resolves true on success.
+  // Subscribes this device and registers it on the server.
+  // Resolves { ok: true } or { ok: false, reason, detail } — reason is one of
+  // unsupported | dismissed | denied | sw | server-key | push-service | server-save.
   function enablePush() {
-    if (!pushSupported() || !window.Api) return Promise.resolve(false);
+    var fail = function (reason, detail) { return { ok: false, reason: reason, detail: detail || '' }; };
+    // js/api.js declares `const Api`: a top-level const is not a window property.
+    if (!pushSupported() || typeof Api === 'undefined') return Promise.resolve(fail('unsupported'));
+    var errText = function (e) { return e ? ((e.name ? e.name + ': ' : '') + (e.message || String(e))) : ''; };
     return Notification.requestPermission().then(function (perm) {
-      if (perm !== 'granted') return false;
-      return Promise.all([navigator.serviceWorker.ready, Api.call('push_public_key')]).then(function (r) {
+      if (perm === 'denied') return fail('denied');
+      if (perm !== 'granted') return fail('dismissed');
+      var ready = Promise.race([navigator.serviceWorker.ready, new Promise(function (_, reject) {
+        setTimeout(function () { reject(new Error('service worker not ready after 15s')); }, 15000);
+      })]);
+      return Promise.all([ready, Api.call('push_public_key')]).then(function (r) {
         var reg = r[0], key = r[1] && r[1].public_key;
-        if (!key) return false;
+        if (!key) return fail('server-key', (r[1] && r[1].error) || 'no public key');
         return reg.pushManager.getSubscription().then(function (old) {
           return old || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(key) });
         }).then(function (sub) {
           var j = sub.toJSON();
-          return Api.call('push_subscribe', { endpoint: j.endpoint, keys: j.keys }).then(function (res) { return !!(res && res.success); });
+          return Api.call('push_subscribe', { endpoint: j.endpoint, keys: j.keys }).then(function (res) {
+            return (res && res.success) ? { ok: true } : fail('server-save', (res && res.error) || '');
+          });
+        }, function (e) {
+          console.warn('[PWA] push subscribe failed:', e);
+          return fail('push-service', errText(e));
         });
-      });
-    }).catch(function (e) { console.warn('[PWA] push subscribe failed:', e); return false; });
+      }, function (e) { return fail('sw', errText(e)); });
+    }).catch(function (e) { console.warn('[PWA] push enable failed:', e); return fail('push-service', errText(e)); });
   }
   function disablePush() {
     if (!pushSupported()) return Promise.resolve(true);
     return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) {
       if (!sub) return true;
       var endpoint = sub.endpoint;
-      return sub.unsubscribe().then(function () { return window.Api ? Api.call('push_unsubscribe', { endpoint: endpoint }) : null; }).then(function () { return true; });
+      return sub.unsubscribe().then(function () { return typeof Api !== 'undefined' ? Api.call('push_unsubscribe', { endpoint: endpoint }) : null; }).then(function () { return true; });
     }).catch(function () { return false; });
   }
   window.Pwa = { pushState: pushState, enablePush: enablePush, disablePush: disablePush };

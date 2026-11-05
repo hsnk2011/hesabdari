@@ -752,7 +752,16 @@ const QuotationManager = (function () {
         $('#save-quotation-btn').on('click', saveQuotation);
 
         // Status filter change
-        $('#quotation-status-filter').on('change', () => load());
+        $('#quotation-status-filter').on('change', () => { AppConfig.TABLE_STATES.quotations.currentPage = 1; load(); });
+
+        // Search box above the list
+        const searchHandler = UI.debounce((term) => {
+            const state = AppConfig.TABLE_STATES.quotations;
+            state.searchTerm = term;
+            state.currentPage = 1;
+            load();
+        }, 500);
+        $(document).on('input', '.table-search[data-table="quotations"]', function () { searchHandler($(this).val().trim()); });
 
         // Table events (delegation)
         $('#quotations-table-body').on('click', '.btn-view', function () {

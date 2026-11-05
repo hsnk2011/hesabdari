@@ -1162,6 +1162,32 @@ const InvoiceManager = (function () {
             } else if (type === 'check_bounce') {
                 detailsContainer.html(`<div class="small text-muted pt-2">${UI.escapeHtml((details && details.description) || 'برگشت چک')}</div>`);
                 paymentAmountInput.prop('readonly', true);
+            } else if (type === 'setoff' && invoiceType === 'purchase') {
+                // Purchase leg: the other side is who paid the supplier (the customer
+                // of the sales invoice). Read-only; edited only from the sales invoice.
+                const srcTypeLabels = { customer: 'مشتری', supplier: 'تأمین‌کننده', contact: 'سایر اشخاص', partner: 'شریک' };
+                const srcType = (details && details.setoff_person_type) || 'customer';
+                const srcName = (details && details.setoff_person_name) || '';
+                const srcInvId = details && details.setoff_invoice_id;
+                const srcInvLabel = srcInvId ? `#${(details.setoff_invoice_number || srcInvId)}` : 'علی‌الحساب / بدون فاکتور';
+                detailsContainer.html(`
+                    <div class="row g-2">
+                        <div class="col-6 pay-col-setoff-type"><label class="form-label-sm">نوع مبدأ</label>
+                            <input type="text" class="form-control form-control-sm" readonly value="${UI.escapeHtml(srcTypeLabels[srcType] || srcType)}">
+                        </div>
+                        <div class="col-6 pay-col-setoff-person"><label class="form-label-sm">پرداخت‌کننده</label>
+                            <input type="text" class="form-control form-control-sm" readonly value="${UI.escapeHtml(srcName)}">
+                        </div>
+                        <div class="col-12 pay-col-setoff-invoice"><label class="form-label-sm">فاکتور فروش</label>
+                            <input type="text" class="form-control form-control-sm" readonly value="${UI.escapeHtml(srcInvLabel)}">
+                        </div>
+                        <div class="col-12 pay-col-setoff-note"><label class="form-label-sm">توضیحات</label>
+                            <input type="text" class="form-control form-control-sm payment-description" readonly value="${UI.escapeHtml((details && details.description) || '')}">
+                        </div>
+                    </div>
+                `);
+                paymentAmountInput.prop('readonly', true);
+                txnSelect.prop('disabled', true);
             } else if (type === 'setoff') {
                 const suppliers = App.getCache().suppliers || [];
                 const contacts = App.getCache().contacts || [];
@@ -1171,29 +1197,32 @@ const InvoiceManager = (function () {
                 const contactOpts = contacts.map(c => `<option value="${c.id}">${UI.escapeHtml(c.name)}</option>`).join('');
                 detailsContainer.html(`
                     <div class="row g-2">
-                        <div class="col-6"><label class="form-label-sm">نوع مقصد</label>
+                        <div class="col-6 pay-col-setoff-type"><label class="form-label-sm">نوع مقصد</label>
                             <select class="form-select form-select-sm setoff-person-type">
                                 <option value="supplier">تأمین‌کننده</option>
                                 <option value="contact">سایر اشخاص</option>
                             </select>
                         </div>
-                        <div class="col-6"><label class="form-label-sm">شخص مقصد</label>
+                        <div class="col-6 pay-col-setoff-person"><label class="form-label-sm">شخص مقصد</label>
                             <select class="form-select form-select-sm setoff-person-id" required>
                                 <option value="">-- انتخاب --</option>
                             </select>
                         </div>
-                        <div class="col-12 setoff-invoice-wrap"><label class="form-label-sm">فاکتور خرید (اختیاری)</label>
+                        <div class="col-12 setoff-invoice-wrap pay-col-setoff-invoice"><label class="form-label-sm">فاکتور خرید (اختیاری)</label>
                             <select class="form-select form-select-sm setoff-invoice-id">
                                 <option value="">علی‌الحساب / بدون فاکتور</option>
                             </select>
                         </div>
-                        <div class="col-12"><label class="form-label-sm">توضیحات</label>
+                        <div class="col-12 pay-col-setoff-note"><label class="form-label-sm">توضیحات</label>
                             <input type="text" class="form-control form-control-sm payment-description" placeholder="مثلاً واریز مستقیم به شبا…">
                         </div>
                     </div>
                 `);
                 paymentAmountInput.prop('readonly', false);
-                txnSelect.val('receipt').prop('disabled', true);
+                // Sales leg is a receipt from the customer; the purchase leg is stored
+                // as a payment to the supplier — keep the stored direction there.
+                if (invoiceType === 'sales') txnSelect.val('receipt');
+                txnSelect.prop('disabled', true);
 
                 const $type = detailsContainer.find('.setoff-person-type');
                 const $person = detailsContainer.find('.setoff-person-id');
@@ -1322,7 +1351,7 @@ const InvoiceManager = (function () {
             $(`${formId} #${type}-invoice-tax-enabled`).prop('checked', hasTax);
             $(`${formId} #${type}-invoice-tax-rate`).val(invoice.tax_rate || 0);
             $(`${formId} #${type}-invoice-tax-amount`).val(Number(invoice.tax_amount || 0).toLocaleString('en-US'));
-            $(`.${type}-tax-row`).toggle(hasTax);
+            $(`.${type}-tax-row`).toggleClass('d-none', !hasTax);
             $(`${formId} #${type}-invoice-number`).val(invoice.invoice_number || '').attr('placeholder', String(invoice.id));
             if (type === 'purchase') {
                 loadPurchaseWarehouseOptions(invoice.warehouse_id || '', false);
@@ -1339,7 +1368,7 @@ const InvoiceManager = (function () {
             $(`${formId} #${type}-invoice-tax-enabled`).prop('checked', false);
             $(`${formId} #${type}-invoice-tax-rate`).val('0');
             $(`${formId} #${type}-invoice-tax-amount`).val('0');
-            $(`.${type}-tax-row`).hide();
+            $(`.${type}-tax-row`).addClass('d-none');
             $(`${formId} #${type}-invoice-number`).val('').attr('placeholder', 'خودکار');
             if (type === 'purchase') {
                 loadPurchaseWarehouseOptions('', true);
@@ -2048,6 +2077,10 @@ const InvoiceManager = (function () {
                 } else {
                     p.checkId = endorsedCheckId;
                 }
+            } else if (p.type === 'setoff' && type === 'purchase') {
+                // Purchase leg of a sales-invoice setoff: read-only here; the server
+                // keeps it as stored (by existing_payment_id). It has no counterparty fields.
+                p.account_id = null;
             } else if (p.type === 'setoff') {
                 p.transaction_type = 'receipt';
                 p.account_id = null;
@@ -3120,10 +3153,10 @@ const InvoiceManager = (function () {
             if (enabled) {
                 const defaultRate = parseFloat((App.getCache().settings || {}).default_tax_rate) || 0;
                 $(`#${type}-invoice-tax-rate`).val(defaultRate);
-                $(`.${type}-tax-row`).show();
+                $(`.${type}-tax-row`).removeClass('d-none');
             } else {
                 $(`#${type}-invoice-tax-rate`).val('0');
-                $(`.${type}-tax-row`).hide();
+                $(`.${type}-tax-row`).addClass('d-none');
             }
             calculateInvoiceTotals(type);
         });

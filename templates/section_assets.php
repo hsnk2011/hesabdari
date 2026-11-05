@@ -1,11 +1,12 @@
 <div class="tab-pane fade" id="assets" role="tabpanel">
-    <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
-        <h4 class="mb-0"><i class="bi bi-gem me-2"></i>دارایی‌ها</h4>
-        <div class="d-flex flex-wrap gap-2">
-            <button class="btn btn-primary" id="asset-buy-btn"><i class="bi bi-cart-plus me-1"></i>خرید</button>
-            <button class="btn btn-success" id="asset-sell-btn"><i class="bi bi-cash-coin me-1"></i>فروش</button>
+    <div class="ui-page-head">
+        <div>
+            <h4 class="ui-page-title">دارایی‌ها</h4>
+            <p class="ui-page-sub">ارز، سکه، طلا، وسایل و تجهیزات — هر چیزی جز فرش؛ جدا از انبار و فروش فرش</p>
+        </div>
+        <div class="ui-page-actions">
             <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">بیشتر</button>
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots"></i>بیشتر</button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><button class="dropdown-item" type="button" id="asset-opening-btn"><i class="bi bi-box-seam me-2"></i>ثبت چیزهایی که از قبل دارم</button></li>
                     <li data-permission="manage_purchase_invoices"><button class="dropdown-item" type="button" id="asset-convert-btn"><i class="bi bi-arrow-left-right me-2"></i>انتقال از فاکتور خرید</button></li>
@@ -15,71 +16,71 @@
                     <li><label class="dropdown-item mb-0"><input class="form-check-input me-2" type="checkbox" id="assets-show-archived">نمایش بایگانی‌شده‌ها</label></li>
                 </ul>
             </div>
-        </div>
-    </div>
-    <p class="text-muted small mb-3">ارز، سکه، طلا، وسایل و تجهیزات — هر چیزی جز فرش. این‌ها در انبار و فروش فرش حساب نمی‌شوند.</p>
-
-    <div class="row g-2 mb-3" id="assets-summary"></div>
-
-    <div class="card mb-3">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0" id="assets-table">
-                    <thead class="table-light">
-                        <tr>
-                            <th>دارایی</th>
-                            <th class="d-none d-md-table-cell">مقدار</th>
-                            <th class="d-none d-md-table-cell">مبلغ خرید</th>
-                            <th>ارزش امروز</th>
-                            <th class="d-none d-md-table-cell">سود / زیان</th>
-                            <th class="text-end"></th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
+            <button class="btn btn-outline-success" id="asset-sell-btn"><i class="bi bi-cash-coin"></i>فروش</button>
+            <button class="btn btn-primary" id="asset-buy-btn"><i class="bi bi-cart-plus"></i>خرید</button>
         </div>
     </div>
 
+    <div class="row g-2 mb-3 ui-assets-summary" id="assets-summary"></div>
+    <div class="ui-panel">
+        <div class="ui-panel-head">
+            <h5 class="ui-panel-title"><i class="bi bi-gem"></i>دارایی‌های من</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="assets-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>دارایی</th>
+                        <th class="d-none d-md-table-cell">مقدار</th>
+                        <th class="d-none d-md-table-cell">مبلغ خرید</th>
+                        <th>ارزش امروز</th>
+                        <th class="d-none d-md-table-cell">سود / زیان</th>
+                        <th class="text-end"></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
     <div class="row g-3">
         <div class="col-lg-8">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <span class="fw-bold">خریدها و فروش‌ها</span>
-                    <select class="form-select form-select-sm w-auto" id="asset-docs-filter">
-                        <option value="">همه</option>
-                        <option value="purchase">فقط خریدها</option>
-                        <option value="sale">فقط فروش‌ها</option>
-                    </select>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover align-middle mb-0" id="asset-docs-table">
-                            <thead class="table-light">
-                                <tr>
-                                    <th class="d-none d-md-table-cell">تاریخ</th>
-                                    <th>شرح</th>
-                                    <th>مبلغ</th>
-                                    <th class="d-none d-md-table-cell">وضعیت</th>
-                                    <th class="text-end"></th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+            <div class="ui-panel">
+                <div class="ui-panel-head">
+                    <h5 class="ui-panel-title"><i class="bi bi-receipt"></i>خریدها و فروش‌ها</h5>
+                    <div class="ui-page-actions">
+                        <select class="form-select form-select-sm" id="asset-docs-filter">
+                            <option value="">همه</option>
+                            <option value="purchase">فقط خریدها</option>
+                            <option value="sale">فقط فروش‌ها</option>
+                        </select>
                     </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" id="asset-docs-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="d-none d-md-table-cell">تاریخ</th>
+                                <th>شرح</th>
+                                <th>مبلغ</th>
+                                <th class="d-none d-md-table-cell">وضعیت</th>
+                                <th class="text-end"></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
                 </div>
             </div>
         </div>
         <div class="col-lg-4">
-            <div class="card">
-                <div class="card-header fw-bold d-flex justify-content-between align-items-center">
-                    <span>قیمت امروز</span>
-                    <button type="button" class="btn btn-link btn-sm p-0" id="asset-prices-toggle">همه قیمت‌ها</button>
+            <div class="ui-panel">
+                <div class="ui-panel-head">
+                    <h5 class="ui-panel-title"><i class="bi bi-currency-exchange"></i>قیمت امروز</h5>
+                    <div class="ui-page-actions">
+                        <button type="button" class="btn btn-link btn-sm p-0" id="asset-prices-toggle">همه قیمت‌ها</button>
+                    </div>
                 </div>
-                <div class="card-body p-0">
-                    <table class="table table-sm mb-0" id="asset-prices-table"><tbody></tbody></table>
-                </div>
-                <div class="card-footer small text-muted" id="asset-prices-footer"></div>
+                <table class="table table-sm mb-0" id="asset-prices-table"><tbody></tbody></table>
+                <div class="ui-panel-foot small text-muted" id="asset-prices-footer"></div>
             </div>
         </div>
     </div>

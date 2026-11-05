@@ -60,7 +60,8 @@ class PriceListController {
             $result = $this->priceListModel->setPrice(
                 $data['id'],
                 $data['type'],
-                $data['price']
+                $data['price'],
+                ($data['field'] ?? 'sale') === 'partner' ? 'partner' : 'sale'
             );
             
             send_json($result);
