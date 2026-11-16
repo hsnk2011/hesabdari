@@ -37,6 +37,36 @@
             </button>
         </div>
     </div>
+
+    <div class="ui-panel" id="checks-maturity-panel">
+        <div class="ui-panel-head">
+            <h5 class="ui-panel-title"><i class="bi bi-calendar3"></i> سررسید چک‌های باز</h5>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="btn-group ui-segmented" id="checks-maturity-view-toggle" role="group" aria-label="نمای سررسید">
+                    <button type="button" class="btn active" data-maturity-view="chart">نمودار</button>
+                    <button type="button" class="btn" data-maturity-view="calendar">تقویم</button>
+                </div>
+                <div class="btn-group" id="checks-maturity-month-nav" hidden>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="checks-maturity-prev-month" title="ماه قبل"><i class="bi bi-chevron-right"></i></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="checks-maturity-next-month" title="ماه بعد"><i class="bi bi-chevron-left"></i></button>
+                </div>
+            </div>
+        </div>
+        <div class="ui-panel-body">
+            <div id="checks-maturity-chart-wrap">
+                <canvas id="checks-maturity-chart" height="120" aria-label="نمودار سررسید شش ماه آینده"></canvas>
+                <p class="small text-muted mb-0 mt-2" id="checks-maturity-chart-hint">کلیک روی هر ماه → تقویم همان ماه و فیلتر جدول</p>
+            </div>
+            <div id="checks-maturity-calendar-wrap" hidden>
+                <div class="checks-maturity-cal-meta d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                    <strong id="checks-maturity-cal-label">—</strong>
+                    <span class="small text-muted">سبز: دریافتی · قرمز: پرداختی · کلیک روز = فیلتر جدول</span>
+                </div>
+                <div id="checks-maturity-calendar" class="checks-maturity-cal" role="grid" aria-label="تقویم سررسید ماه"></div>
+            </div>
+        </div>
+    </div>
+
     <div class="ui-panel">
         <div class="ui-toolbar ui-toolbar-stack">
             <div class="btn-group ui-segmented ui-segmented-wrap" id="check-filter-presets" role="group" aria-label="تفکیک سریع چک‌ها">

@@ -4,7 +4,8 @@
 //   GET ?action=meta
 //   GET ?action=section&section=overview|time|products|customers|collections|profit|inventory|operations
 //        &startDate=Y-m-d&endDate=Y-m-d&compare=prev|yoy|none&granularity=auto|day|week|month|quarter|year
-//        [&collection=ID&ptype=machine|handmade] [&refresh=1]
+//        [&collection=ID&ptype=machine|handmade] [&channel=all|retail|trade|internal] [&refresh=1]
+//        (no channel = retail + trade: «داخلی» invoices are left out of the sales figures)
 //   GET ?action=inventory_items&collectionId=&keyword=&includeConsignment=1
 require_once __DIR__ . '/../api/core/session.php';
 app_session_start();
@@ -50,16 +51,19 @@ try {
             if (!in_array($compare, ['prev', 'yoy', 'none'], true)) $compare = 'prev';
             $ptype = param('ptype', '');
             if (!in_array($ptype, ['', 'machine', 'handmade'], true)) $ptype = '';
+            $channel = param('channel', '');
+            if (!in_array($channel, ['', 'all', 'retail', 'trade', 'internal'], true)) $channel = '';
             $filters = [
                 'start' => $start, 'end' => $end, 'compare' => $compare,
                 'granularity' => param('granularity', 'auto'),
                 'collection' => max(0, (int)param('collection', 0)),
                 'ptype' => $ptype,
+                'channel' => $channel,
             ];
             // Short-lived cache: analytics can be heavy, but a just-saved invoice
             // should show up quickly — the page's refresh button bypasses it.
             $cache = new SimpleCache(sys_get_temp_dir() . '/hesabdari_cache/', 120);
-            $key = 'analytics2_' . $section . '_' . md5(json_encode([$entityId, $filters, date('Y-m-d')]));
+            $key = 'analytics3_' . $section . '_' . md5(json_encode([$entityId, $filters, date('Y-m-d')]));
             $val = param('refresh') === '1' ? null : $cache->get($key);
             if ($val === null) {
                 $val = $engine->section($section, $filters);

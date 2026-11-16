@@ -94,6 +94,14 @@
     border-top-color: #2a2a4a !important;
 }
 
+[data-theme="dark"] .invoice-details-row:is(.is-settled, .is-unsettled) > td {
+    background-color: #16213e !important;
+    border-bottom-color: #3a3a5a !important;
+}
+
+[data-theme="dark"] .invoice-details-row.is-unsettled > td { box-shadow: inset -4px 0 0 #ffc107; }
+[data-theme="dark"] .invoice-details-row.is-settled > td { box-shadow: inset -4px 0 0 #198754; }
+
 [data-theme="dark"] .invoice-details-row .table {
     background-color: #111f35 !important;
 }

@@ -609,6 +609,11 @@ const App = (function () {
     }
 
     function initEntityManagers() {
+        // تغییر نوع فروش مشتری موجود: پیشنهاد اعمال روی فاکتورهای قبلی
+        $('#customer-sale-channel').on('change', function () {
+            const original = $(this).data('original');
+            $('#customerModal .customer-channel-apply-wrap').toggle(!!original && original !== $(this).val());
+        });
         // تلفن‌های چندتایی مشتری/تامین‌کننده
         $('#customer-add-phone-btn').on('click', function () {
             $('#customer-phones-list').append(`
@@ -663,6 +668,7 @@ const App = (function () {
                     return {
                         name: UI.escapeHtml(c.name || '') + linkedPersonBadge(c),
                         phone: `<span class="small">${formatPhonesForList(c.phone)}</span>`,
+                        sale_channel: UI.saleChannelBadge(c.sale_channel, true),
                         job: UI.escapeHtml(c.job || '—'),
                         address: `<span class="small text-muted">${UI.escapeHtml(c.address || '—')}</span>`,
                         nationalId: UI.escapeHtml(c.nationalId || '—'),
@@ -693,6 +699,10 @@ const App = (function () {
                 $('#customer-is-both').prop('checked', !!(customer && Number(customer.linked_id || customer.linked_supplier_id) > 0));
                 $('#customer-initial-balance').val(customer ? Number(customer.initial_balance).toLocaleString('en-US') : '0');
                 $('#customer-credit-limit').val(customer && customer.credit_limit !== null && customer.credit_limit !== undefined && customer.credit_limit !== '' ? Number(customer.credit_limit).toLocaleString('en-US') : '');
+                $('#customer-sale-channel').val(customer && customer.sale_channel ? customer.sale_channel : 'retail')
+                    .data('original', customer ? (customer.sale_channel || 'retail') : '');
+                $('#customerModal .customer-channel-apply-wrap').hide();
+                $('#customer-channel-apply').prop('checked', true);
                 const groupSelect = $('#customer-group');
                 groupSelect.find('option:not(:first)').remove();
                 Api.call('list_lookup', { kind: 'customer_groups' }, false).then(res => {
@@ -711,11 +721,14 @@ const App = (function () {
                 is_both: $('#customer-is-both').is(':checked') ? 1 : 0,
                 initial_balance: $('#customer-initial-balance').val().replace(/,/g, ''),
                 credit_limit: ($('#customer-credit-limit').val() || '').replace(/,/g, ''),
-                group_id: $('#customer-group').val() || null
+                group_id: $('#customer-group').val() || null,
+                sale_channel: $('#customer-sale-channel').val() || 'retail',
+                apply_channel_to_invoices: $('#customerModal .customer-channel-apply-wrap').is(':visible') && $('#customer-channel-apply').is(':checked') ? 1 : 0
             }),
             onSuccess: async (result, formData) => {
                 const modal = $('#customerModal');
                 if (result.warning) UI.showError(result.warning);
+                if (result.invoices_updated > 0) UI.showInfo(`نوع فروش ${result.invoices_updated} فاکتور قبلی این مشتری هم «${UI.saleChannelLabel(formData.sale_channel)}» شد.`);
                 await App.updateCache(['customers', 'suppliers']);
                 if (managers.suppliers && (result.linked_id || formData.id)) managers.suppliers.load();
 
@@ -1660,6 +1673,25 @@ const App = (function () {
         check();
     }
 
+    /**
+     * Dropdowns inside tables (delivery status, row menus) are cut off by the
+     * scroll box of .table-responsive. Before Bootstrap's own click / key
+     * handler opens one, give it a fixed-position menu so it can leave the box.
+     */
+    function initTableDropdowns() {
+        if (!window.bootstrap?.Dropdown) return;
+        const prepare = (e) => {
+            const toggle = e.target.closest && e.target.closest('[data-bs-toggle="dropdown"]');
+            if (!toggle || !toggle.closest('.table-responsive, .table')) return;
+            if (bootstrap.Dropdown.getInstance(toggle)) return;
+            new bootstrap.Dropdown(toggle, { popperConfig: { strategy: 'fixed' } });
+        };
+        // On window: Bootstrap's own delegated handler sits on document in the
+        // capture phase, and window's capture listeners run before it.
+        window.addEventListener('click', prepare, true);
+        window.addEventListener('keydown', prepare, true);
+    }
+
     function initPersonsDropdownMobileFix() {
         // On mobile, customers/suppliers are direct tabs (no dropdown).
         // Keep desktop dropdown working and sync active state.
@@ -1728,6 +1760,7 @@ const App = (function () {
         UI.init();
         initQuickNavigation();
         initPersonsDropdownMobileFix();
+        initTableDropdowns();
         initSessionExpiryWarning(sessionData.session_expires_at);
 
         if (hasPermission('view_reports')) {

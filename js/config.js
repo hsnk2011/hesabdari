@@ -6,11 +6,11 @@ const AppConfig = {
     VERSION: window.__APP_VERSION__ || '2.0.119',
     TABLE_STATES: {
         accounts: { currentPage: 1, limit: 10, sortBy: 'id', sortOrder: 'DESC', searchTerm: '' },
-        customers: { currentPage: 1, limit: 25, sortBy: 'id', sortOrder: 'DESC', searchTerm: '', balanceFilter: '' },
+        customers: { currentPage: 1, limit: 25, sortBy: 'id', sortOrder: 'DESC', searchTerm: '', balanceFilter: '', saleChannelFilter: '' },
         suppliers: { currentPage: 1, limit: 25, sortBy: 'id', sortOrder: 'DESC', searchTerm: '', balanceFilter: '' },
         contacts: { currentPage: 1, limit: 25, sortBy: 'id', sortOrder: 'DESC', searchTerm: '', balanceFilter: '' },
         products: { currentPage: 1, limit: 10, sortBy: 'name', sortOrder: 'ASC', searchTerm: '', collectionId: '', stockFilter: 'in_stock', warehouseId: '', minArea: '', maxArea: '', shapeFilter: '' },
-        sales_invoices: { currentPage: 1, limit: 10, sortBy: 'id', sortOrder: 'DESC', searchTerm: '' },
+        sales_invoices: { currentPage: 1, limit: 10, sortBy: 'id', sortOrder: 'DESC', searchTerm: '', saleChannelFilter: '' },
         purchase_invoices: { currentPage: 1, limit: 10, sortBy: 'id', sortOrder: 'DESC', searchTerm: '' },
         return_invoices: { currentPage: 1, limit: 10, sortBy: 'id', sortOrder: 'DESC', searchTerm: '', invoiceType: '' },
         quotations: { currentPage: 1, limit: 10, sortBy: 'id', sortOrder: 'DESC', searchTerm: '', statusFilter: '' },
@@ -41,6 +41,8 @@ const AppConfig = {
         DASHBOARD_ORDER_TOLERANCE: 'hesabdari_dashboard_order_tolerance',
         // Card/list view on the public stock page (stock.php uses the same literal).
         STOCK_SHARE_VIEW: 'hesabdari_stock_share_view',
+        // Shop name/logo for the paper pre-invoice form (assets/forms/pish-factor-forush.html uses the same literal).
+        PAPER_FORM_SHOP: 'hesabdari_paper_form_shop',
     },
 
     // ---- Shared UI timings (ms) ----

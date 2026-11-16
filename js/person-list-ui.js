@@ -7,6 +7,7 @@ const PersonListUI = (function () {
         customers: [
             { id: 'name', label: 'نام', required: true, defaultVisible: true, thClass: 'sortable-header', sortBy: 'name' },
             { id: 'phone', label: 'تلفن', defaultVisible: true },
+            { id: 'sale_channel', label: 'نوع فروش', defaultVisible: true },
             { id: 'job', label: 'شغل', defaultVisible: false },
             { id: 'address', label: 'آدرس', defaultVisible: false },
             { id: 'nationalId', label: 'کد ملی', defaultVisible: false },
@@ -127,6 +128,14 @@ const PersonListUI = (function () {
             const state = AppConfig.TABLE_STATES[tableKey];
             if (!state) return;
             state.balanceFilter = $(this).val();
+            state.currentPage = 1;
+            if (typeof onReload === 'function') onReload();
+        });
+
+        $(`#${tableKey.replace(/_/g, '-')}-channel-filter`).on('change', function () {
+            const state = AppConfig.TABLE_STATES[tableKey];
+            if (!state) return;
+            state.saleChannelFilter = $(this).val();
             state.currentPage = 1;
             if (typeof onReload === 'function') onReload();
         });

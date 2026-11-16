@@ -4,7 +4,7 @@
 
 > **English summary:** A Persian (RTL) web-based accounting system for trading businesses, especially carpet sellers. It has a PHP API, a MySQL/MariaDB database and an installable PWA front end. It covers sales and purchase invoices, inventory, customers and suppliers, checks, bank-statement reconciliation, reports and sales analytics, SMS through Kavenegar, online payments through Zarinpal, and a built-in team workspace (CRM, projects, meetings, chat and web push). No framework and no Composer dependencies are needed, and it runs on ordinary shared hosting or a VPS.
 
-نسخه فعلی: **2.7.5** (مقدار `APP_VERSION` در `api/core/constants.php`). تاریخچه تغییرات در [CHANGELOG.md](CHANGELOG.md) و مستندات فنی کامل در [DOCUMENTATION.md](DOCUMENTATION.md) است.
+نسخه فعلی: **2.8.2** (مقدار `APP_VERSION` در `api/core/constants.php`). تاریخچه تغییرات در [CHANGELOG.md](CHANGELOG.md) و مستندات فنی کامل در [DOCUMENTATION.md](DOCUMENTATION.md) است.
 
 ---
 

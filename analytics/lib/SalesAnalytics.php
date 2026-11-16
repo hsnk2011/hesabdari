@@ -11,7 +11,9 @@
 //   • COGS       = purchase price of the exact inventory items sold
 //                  (fallback: last purchase price of product+size, then cost_price),
 //                  minus the cost of items that came back with sales returns;
-//   • invoice discount is spread over its lines pro-rata to line value.
+//   • invoice discount is spread over its lines pro-rata to line value;
+//   • sale channel (sales_invoices.sale_channel): by default «داخلی» (internal) invoices
+//     are left out; the channel filter narrows every dataset to one channel.
 
 require_once __DIR__ . '/Jalali.php';
 
@@ -24,6 +26,10 @@ class SalesAnalytics {
     private array $labelCache = [];
     private array $dimensionMap = [];
     private float $dimensionThreshold = 15.0;
+    /** '' = retail + trade (internal left out), 'all', or one of retail|trade|internal. */
+    private string $channel = '';
+
+    public const CHANNELS = ['retail' => 'خانگی', 'trade' => 'همکار/عمده', 'internal' => 'داخلی'];
 
     public function __construct(mysqli $db, int $entityId, ?string $today = null) {
         $this->db = $db;
@@ -59,6 +65,7 @@ class SalesAnalytics {
      *                  'collection' => int,'ptype' => machine|handmade]
      */
     public function section(string $name, array $f): array {
+        $this->setChannel((string)($f['channel'] ?? ''));
         $p = $this->periods($f);
         switch ($name) {
             case 'overview':      return $this->overview($p);
@@ -182,6 +189,18 @@ class SalesAnalytics {
         return array_keys($keys);
     }
 
+    public function setChannel(string $channel): void {
+        $channel = ($channel === 'all' || isset(self::CHANNELS[$channel])) ? $channel : '';
+        if ($channel !== $this->channel) { $this->channel = $channel; $this->memo = []; }
+    }
+
+    /** SQL condition (with leading AND) limiting a channel expression to the active channel filter. */
+    private function channelCond(string $expr): string {
+        if ($this->channel === 'all') return '';
+        if ($this->channel === '') return " AND $expr <> 'internal'";
+        return " AND $expr = '{$this->channel}'"; // whitelisted in setChannel
+    }
+
     /* =================================================================
      *  Base datasets (memoized)
      * ================================================================= */
@@ -193,11 +212,11 @@ class SalesAnalytics {
             "SELECT si.id, si.invoice_number, si.customerId, si.date,
                     COALESCE(si.totalAmount,0) AS gross, COALESCE(si.discount,0) AS discount,
                     COALESCE(si.tax_amount,0) AS tax, COALESCE(si.paidAmount,0) AS paid,
-                    si.delivery_status, si.source, si.due_date,
+                    si.delivery_status, si.source, si.due_date, si.sale_channel,
                     COALESCE(c.name, CONCAT('مشتری #', si.customerId)) AS customer_name, c.phone
              FROM sales_invoices si
              LEFT JOIN customers c ON c.id = si.customerId
-             WHERE si.entity_id = ? AND si.is_consignment = 0
+             WHERE si.entity_id = ? AND si.is_consignment = 0" . $this->channelCond('si.sale_channel') . "
              ORDER BY si.date, si.id", 'i', [$this->entityId]);
         foreach ($rows as &$r) {
             $r['id'] = (int)$r['id'];
@@ -235,10 +254,12 @@ class SalesAnalytics {
         if (isset($this->memo[$k])) return $this->memo[$k];
         $cost = $this->costExpr();
         $rows = $this->rows(
-            "SELECT sii.id, sii.invoiceId, si.date, si.customerId, sii.productId,
+            "SELECT sii.id, sii.invoiceId, si.date, si.customerId, sii.productId, si.sale_channel,
                     COALESCE(p.name, CONCAT('محصول #', sii.productId)) AS product_name,
                     COALESCE(p.design_code,'') AS design_code, COALESCE(p.colorway,'') AS colorway,
-                    COALESCE(p.material,'') AS material, p.shaneh, p.density, COALESCE(p.type,'') AS product_type,
+                    -- machine/handmade comes from the collection (products.type is a stale legacy column that
+                    -- only some databases have); material/shaneh/density now live in collection attributes.
+                    '' AS material, NULL AS shaneh, NULL AS density, COALESCE(pc.type,'') AS product_type,
                     COALESCE(p.collection_id,0) AS collection_id, COALESCE(pc.name,'') AS collection_name,
                     COALESCE(pc.price_per_meter,0) AS price_per_meter, COALESCE(p.price,0) AS list_price,
                     sii.quantity, sii.unitPrice, COALESCE(sii.dimensions,'') AS dimensions,
@@ -262,7 +283,7 @@ class SalesAnalytics {
                 WHERE si.entity_id = ? AND si.is_consignment = 0 AND si.date BETWEEN ? AND ?
                 GROUP BY ii.sales_invoice_item_id
              ) cst ON cst.sid = sii.id
-             WHERE si.entity_id = ? AND si.is_consignment = 0 AND si.date BETWEEN ? AND ?
+             WHERE si.entity_id = ? AND si.is_consignment = 0 AND si.date BETWEEN ? AND ?" . $this->channelCond('si.sale_channel') . "
              ORDER BY si.date, sii.id",
             'ississ', [$this->entityId, $s, $e, $this->entityId, $s, $e]);
 
@@ -311,11 +332,13 @@ class SalesAnalytics {
             "SELECT ri.id, ri.date, ri.person_id, ri.original_invoice_id,
                     (COALESCE(ri.totalAmount,0) - COALESCE(ri.discount,0)) AS amount,
                     COALESCE(ri.description,'') AS description, si.date AS sale_date,
-                    COALESCE(c.name, CONCAT('مشتری #', ri.person_id)) AS customer_name
+                    COALESCE(c.name, CONCAT('مشتری #', ri.person_id)) AS customer_name,
+                    COALESCE(si.sale_channel, c.sale_channel, 'retail') AS sale_channel
              FROM return_invoices ri
              LEFT JOIN sales_invoices si ON si.id = ri.original_invoice_id
              LEFT JOIN customers c ON c.id = ri.person_id
-             WHERE ri.entity_id = ? AND ri.type = 'sales_return' AND ri.date BETWEEN ? AND ?
+             WHERE ri.entity_id = ? AND ri.type = 'sales_return' AND ri.date BETWEEN ? AND ?"
+             . $this->channelCond("COALESCE(si.sale_channel, c.sale_channel, 'retail')") . "
              ORDER BY ri.date", 'iss', [$this->entityId, $s, $e]);
         $cost = $this->costExpr();
         $cogsRows = $this->rows(
@@ -366,8 +389,10 @@ class SalesAnalytics {
                     si.date AS inv_date, ch.dueDate AS check_due, ch.status AS check_status, ch.bankName
              FROM payments p
              LEFT JOIN sales_invoices si ON si.id = p.invoiceId AND p.invoiceType = 'sales'
+             LEFT JOIN customers cu ON cu.id = p.person_id
              LEFT JOIN checks ch ON ch.id = p.checkId
-             WHERE p.entity_id = ? AND p.person_type = 'customer' AND p.date BETWEEN ? AND ?",
+             WHERE p.entity_id = ? AND p.person_type = 'customer' AND p.date BETWEEN ? AND ?"
+             . $this->channelCond("COALESCE(si.sale_channel, cu.sale_channel, 'retail')"),
             'iss', [$this->entityId, $s, $e]);
         foreach ($rows as &$r) { $r['amount'] = (float)$r['amount']; }
         unset($r);
@@ -398,7 +423,7 @@ class SalesAnalytics {
         $rows = $this->rows(
             "SELECT ii.id, ii.product_id, ii.status, COALESCE(ii.dimensions,'') AS dimensions, ii.entry_date,
                     COALESCE(p.name, CONCAT('محصول #', ii.product_id)) AS product_name, COALESCE(p.design_code,'') AS design_code,
-                    COALESCE(p.description,'') AS description, COALESCE(p.type,'') AS product_type,
+                    COALESCE(p.description,'') AS description, COALESCE(pc.type,'') AS product_type,
                     COALESCE(p.collection_id,0) AS collection_id, COALESCE(pc.name,'') AS collection_name,
                     COALESCE(w.name,'') AS warehouse_name,
                     pii.unitPrice AS purchase_price, ii.cost_price, COALESCE(pi.is_consignment,0) AS consignment_in,
@@ -589,7 +614,59 @@ class SalesAnalytics {
             'insights' => $this->insights($p, $cur, $cmp),
             'top_products' => array_slice($this->productRows($this->lines($p['start'], $p['end']), $p), 0, 5),
             'top_customers' => array_slice($this->customerRows($p), 0, 5),
+            'channels' => $this->channelSplit($p),
+            'channel' => $this->channel,
         ];
+    }
+
+    /**
+     * Sales of the period per channel (خانگی / همکار-عمده / داخلی), whatever the channel filter is.
+     * Same formulas as summary(): net = invoices − discount − returns, cogs = sold cost − returned cost.
+     */
+    public function channelSplit(array $p): array {
+        $all = new self($this->db, $this->entityId, $this->today);
+        $all->setChannel('all');
+        $calc = function (?string $s, ?string $e) use ($all) {
+            $out = [];
+            foreach (self::CHANNELS as $k => $label) {
+                $out[$k] = ['key' => $k, 'label' => $label, 'net' => 0.0, 'cogs' => 0.0, 'invoices' => 0, 'gross' => 0.0, 'cust' => []];
+            }
+            if (!$s || !$e) return $out;
+            foreach ($all->invoices($s, $e) as $r) {
+                $k = isset($out[$r['sale_channel']]) ? $r['sale_channel'] : 'retail';
+                $out[$k]['net'] += $r['net']; $out[$k]['gross'] += $r['net'];
+                $out[$k]['invoices']++; $out[$k]['cust'][$r['customerId']] = true;
+            }
+            foreach ($all->lines($s, $e) as $l) {
+                $k = isset($out[$l['sale_channel']]) ? $l['sale_channel'] : 'retail';
+                $out[$k]['cogs'] += $l['cost'];
+            }
+            foreach ($all->returns($s, $e) as $r) {
+                $k = isset($out[$r['sale_channel']]) ? $r['sale_channel'] : 'retail';
+                $out[$k]['net'] -= $r['amount']; $out[$k]['cogs'] -= $r['cogs'];
+            }
+            return $out;
+        };
+        $cur = $calc($p['start'], $p['end']);
+        $cmp = $calc($p['cstart'], $p['cend']);
+        $salesTotal = 0.0;
+        foreach ($cur as $k => $r) if ($k !== 'internal') $salesTotal += $r['net'];
+        $rows = [];
+        foreach ($cur as $k => $r) {
+            $gp = $r['net'] - $r['cogs'];
+            $rows[] = [
+                'key' => $k, 'label' => $r['label'],
+                'net' => round($r['net']), 'gross_profit' => round($gp),
+                'margin' => $r['net'] > 0 ? $gp / $r['net'] * 100 : null,
+                'invoices' => $r['invoices'], 'customers' => count($r['cust']),
+                'aov' => $r['invoices'] > 0 ? round($r['gross'] / $r['invoices']) : null,
+                // سهم از فروش واقعی (داخلی جزو کل حساب نمی‌شود)
+                'share' => ($k !== 'internal' && $salesTotal > 0) ? $r['net'] / $salesTotal * 100 : null,
+                'compare_net' => $p['cstart'] ? round($cmp[$k]['net']) : null,
+                'delta' => $p['cstart'] ? $this->delta($r['net'], $cmp[$k]['net'], false) : null,
+            ];
+        }
+        return $rows;
     }
 
     private function periodInfo(array $p): array {

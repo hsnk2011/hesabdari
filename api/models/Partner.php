@@ -78,6 +78,20 @@ class Partner extends BaseModel {
             }
         }
 
+        // A new partner with a share after the first closing would never get profit:
+        // shares come from partner_share_history, which only «بستن + تغییر ساختار شرکا» writes.
+        if ((float)$data['share'] > 0 && empty($data['_allowShareUpdateFromClosing'])) {
+            $histCheck = $this->conn->prepare("SELECT COUNT(*) AS cnt FROM partner_share_history WHERE entity_id = ?");
+            $histCheck->bind_param('i', $entity_id);
+            $histCheck->execute();
+            if (!empty(db_stmt_to_assoc_array($histCheck)[0]['cnt'])) {
+                return [
+                    'error' => 'پس از بستن حساب، شریک جدید با سهم فقط از مسیر «بستن + تغییر ساختار شرکا» اضافه می‌شود. می‌توانید او را با سهم صفر ثبت کنید.',
+                    'statusCode' => 409,
+                ];
+            }
+        }
+
         $ownTransaction = false;
         if ($manageTransaction) {
             $this->conn->begin_transaction();

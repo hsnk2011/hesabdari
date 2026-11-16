@@ -31,6 +31,9 @@ class Product extends BaseModel {
     }
 
     public function getPaginated($input) {
+        if (($input['viewMode'] ?? '') === 'items') {
+            return $this->getItemsPaginated($input);
+        }
         $page = isset($input['currentPage']) ? max(1, intval($input['currentPage'])) : 1;
         $limit = isset($input['limit']) ? intval($input['limit']) : DEFAULT_PAGE_SIZE;
         $offset = ($page - 1) * $limit;
@@ -310,6 +313,145 @@ class Product extends BaseModel {
      * Status/warehouse condition (alias ii_search) a searched piece must meet, mirroring the stock filter.
      * @return array{sql: string, params: array, types: string}
      */
+    /**
+     * «انبار و محصولات» one row per rug (inventory item) instead of one per product, with the
+     * same filters: stock status, warehouse, collection, search (شناسه انبار / name / size), area.
+     * Each row carries the item's شناسه انبار (serial_id; see «واژه‌نامه شناسه‌ها» in DOCUMENTATION.md).
+     */
+    public function getItemsPaginated($input) {
+        $entityId = (int)($_SESSION['current_entity_id'] ?? 0);
+        $page = isset($input['currentPage']) ? max(1, intval($input['currentPage'])) : 1;
+        $limit = isset($input['limit']) ? intval($input['limit']) : DEFAULT_PAGE_SIZE;
+        $sortOrder = strtoupper($input['sortOrder'] ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC';
+        $sortMap = [
+            'serial_id' => 'ii.serial_id', 'name' => 'p.name', 'dimensions' => 'ii.dimensions', 'warehouse' => 'w.name',
+            'status' => 'ii.status', 'entry_date' => 'ii.entry_date', 'collectionName' => 'c.name',
+        ];
+        $sortSql = $sortMap[$input['sortBy'] ?? ''] ?? 'p.name';
+        $orderBy = "{$sortSql} {$sortOrder}" . ($sortSql === 'p.name' ? '' : ', p.name ASC') . ', ii.id ASC';
+
+        $where = ['ii.entity_id = ?'];
+        $params = [$entityId];
+        $types = 'i';
+
+        $collectionId = $input['collectionId'] ?? '';
+        if ($collectionId !== '' && is_numeric($collectionId)) {
+            $where[] = 'p.collection_id = ?';
+            $params[] = (int)$collectionId;
+            $types .= 'i';
+        }
+
+        $warehouseId = $input['warehouseId'] ?? '';
+        $isOrderWarehouse = false;
+        if ($warehouseId === '__no_warehouse__') {
+            $where[] = '(ii.warehouse_id IS NULL OR ii.warehouse_id = 0)';
+        } else if ($warehouseId !== '' && is_numeric($warehouseId)) {
+            $where[] = 'ii.warehouse_id = ?';
+            $params[] = (int)$warehouseId;
+            $types .= 'i';
+            $whStmt = $this->conn->prepare("SELECT warehouse_type FROM warehouses WHERE id = ? AND entity_id = ? LIMIT 1");
+            $wid = (int)$warehouseId;
+            $whStmt->bind_param('ii', $wid, $entityId);
+            $whStmt->execute();
+            $isOrderWarehouse = (db_stmt_to_assoc_array($whStmt)[0]['warehouse_type'] ?? '') === 'order';
+        }
+
+        // Same status rules as the per-product list: an order warehouse also holds sold, undelivered rugs.
+        $stockFilter = $input['stockFilter'] ?? '';
+        if ($stockFilter === '' || $stockFilter === 'in_stock' || $stockFilter === 'low_stock') {
+            $where[] = $isOrderWarehouse ? "ii.status IN ('in_stock', 'returned', 'sold')" : "ii.status IN ('in_stock', 'returned')";
+        } else if ($stockFilter === 'out_of_stock') {
+            $where[] = "ii.status NOT IN ('in_stock', 'returned')";
+        } else if (in_array($stockFilter, ['sold', 'reserved', 'consignment_out', 'returned', 'returned_to_supplier', 'damaged'], true)) {
+            $where[] = 'ii.status = ?';
+            $params[] = $stockFilter;
+            $types .= 's';
+        }
+
+        $searchTerm = trim((string)($input['searchTerm'] ?? ''));
+        if ($searchTerm !== '') {
+            $dimKind = $this->dimensionSearchKind($searchTerm);
+            $normDimSql = "REPLACE(REPLACE(REPLACE(REPLACE(LOWER(ii.dimensions), '×', 'x'), '*', 'x'), ' ', ''), 'در', 'x')";
+            if ($dimKind === 'full' || $dimKind === 'partial') {
+                $needle = $this->normalizeDimensionSearch($searchTerm);
+                $where[] = $dimKind === 'full' ? "{$normDimSql} = ?" : "{$normDimSql} LIKE ?";
+                $params[] = $dimKind === 'full' ? $needle : $needle . '%';
+                $types .= 's';
+            } else {
+                $like = '%' . $searchTerm . '%';
+                $where[] = "(ii.serial_id LIKE ? OR CONCAT('INV-', LPAD(ii.id, 6, '0')) LIKE ? OR p.name LIKE ?
+                             OR p.design_code LIKE ? OR p.colorway LIKE ? OR c.name LIKE ? OR ii.dimensions LIKE ?)";
+                array_push($params, $like, $like, $like, $like, $like, $like, $like);
+                $types .= 'sssssss';
+            }
+        }
+
+        $from = "FROM inventory_items ii
+                 JOIN products p ON p.id = ii.product_id
+                 LEFT JOIN product_collections c ON c.id = p.collection_id
+                 LEFT JOIN warehouses w ON w.id = ii.warehouse_id
+                 WHERE " . implode(' AND ', $where);
+
+        // Area / runner filters read the free-text size, so they run in PHP on the matching rows.
+        $minArea = isset($input['minArea']) && $input['minArea'] !== '' ? floatval($input['minArea']) : null;
+        $maxArea = isset($input['maxArea']) && $input['maxArea'] !== '' ? floatval($input['maxArea']) : null;
+        $areaActive = ($minArea !== null && $minArea > 0) || ($maxArea !== null && $maxArea > 0);
+        $kenareh = ($input['shapeFilter'] ?? '') === 'kenareh';
+        $kenarehMin = kenareh_min_aspect_ratio();
+
+        $select = "SELECT ii.id, ii.serial_id, ii.dimensions, ii.status, ii.entry_date, ii.warehouse_id, ii.product_id,
+                          p.name AS product_name, c.name AS collectionName, c.type AS collectionType,
+                          w.name AS warehouse_name, w.warehouse_type,
+                          (SELECT COALESCE(NULLIF(pim.thumb_path, ''), pim.file_path) FROM product_images pim
+                           WHERE pim.product_id = p.id AND pim.is_primary = 1 LIMIT 1) AS product_thumb,
+                          (SELECT pim.file_path FROM product_images pim
+                           WHERE pim.product_id = p.id AND pim.is_primary = 1 LIMIT 1) AS product_image_full
+                   {$from} ORDER BY {$orderBy}";
+
+        if ($areaActive || $kenareh) {
+            $stmt = $this->conn->prepare($select);
+            $stmt->bind_param($types, ...$params);
+            $stmt->execute();
+            $rows = array_values(array_filter(db_stmt_to_assoc_array($stmt), function ($r) use ($minArea, $maxArea, $areaActive, $kenareh, $kenarehMin) {
+                if ($areaActive) {
+                    $area = dimension_area($this->conn, $r['dimensions'] ?? '');
+                    if (!($area > 0)) return false;
+                    if ($minArea !== null && $minArea > 0 && $area < $minArea) return false;
+                    if ($maxArea !== null && $maxArea > 0 && $area > $maxArea) return false;
+                }
+                if ($kenareh && !(dimension_aspect_ratio($this->conn, $r['dimensions'] ?? '') >= $kenarehMin)) return false;
+                return true;
+            }));
+            $total = count($rows);
+            if ($limit > 0) {
+                $rows = array_slice($rows, ($page - 1) * $limit, $limit);
+            }
+        } else {
+            $countStmt = $this->conn->prepare("SELECT COUNT(*) AS n {$from}");
+            $countStmt->bind_param($types, ...$params);
+            $countStmt->execute();
+            $total = (int)(db_stmt_to_assoc_array($countStmt)[0]['n'] ?? 0);
+            if ($limit > 0) {
+                $select .= " LIMIT ? OFFSET ?";
+                $params[] = $limit;
+                $params[] = ($page - 1) * $limit;
+                $types .= 'ii';
+            }
+            $stmt = $this->conn->prepare($select);
+            $stmt->bind_param($types, ...$params);
+            $stmt->execute();
+            $rows = db_stmt_to_assoc_array($stmt);
+        }
+
+        foreach ($rows as &$r) {
+            if (trim((string)($r['serial_id'] ?? '')) === '') {
+                $r['serial_id'] = 'INV-' . str_pad((string)$r['id'], 6, '0', STR_PAD_LEFT);
+            }
+        }
+        unset($r);
+        return ['data' => $rows, 'totalRecords' => $total];
+    }
+
     private function searchPieceScope($stockFilter, $isOrderWarehouse, $warehouseScopeSql, array $warehouseScopeParams, $warehouseScopeTypes) {
         $sql = '';
         $params = [];
@@ -379,7 +521,7 @@ class Product extends BaseModel {
         $stmt->execute();
         $pieces = [];
         foreach (db_stmt_to_assoc_array($stmt) as $row) {
-            $pieces[(int)$row['product_id']][(string)$row['dimensions']][] = $row;
+            $pieces[(int)$row['product_id']][normalize_dimensions($row['dimensions'])][] = $row;
         }
 
         $narrow = array_flip($ids);
@@ -391,7 +533,7 @@ class Product extends BaseModel {
             $kept = [];
             $warehouses = [];
             foreach ($product['stock'] ?? [] as $s) {
-                $matched = $pieces[$pid][(string)($s['dimensions'] ?? '')] ?? [];
+                $matched = $pieces[$pid][normalize_dimensions($s['dimensions'] ?? '')] ?? [];
                 if (empty($matched)) {
                     continue;
                 }
@@ -441,14 +583,7 @@ class Product extends BaseModel {
 
     /** نرمال‌سازی رشته ابعاد برای جستجو: 2×3 / 2 X 3 / 2*3 → 2x3 */
     public function normalizeDimensionSearch($term) {
-        $t = mb_strtolower(trim((string)$term), 'UTF-8');
-        if ($t === '') {
-            return '';
-        }
-        $t = strtr($t, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٫'=>'.']);
-        $t = str_replace(['×', '✕', '✖', '*', 'X', 'х', 'در'], ['x', 'x', 'x', 'x', 'x', 'x', 'x'], $t);
-        $t = preg_replace('/\s+/u', '', $t);
-        return $t;
+        return normalize_dimensions($term);
     }
 
     /**
@@ -726,8 +861,10 @@ class Product extends BaseModel {
                     // serial_ids: همه (شامل سفارشِ فروخته‌شده در انبار سفارش) — available_serial_ids: فقط قابل فروش
                     $stock_item['serial_ids'] = [];
                     $stock_item['available_serial_ids'] = [];
+                    $stockDimKey = normalize_dimensions($stock_item['dimensions'] ?? '');
                     foreach ($serial_items as $si) {
-                        if ($si['product_id'] == $product['id'] && $si['dimensions'] == $stock_item['dimensions']) {
+                        if ($si['product_id'] == $product['id']
+                            && normalize_dimensions($si['dimensions'] ?? '') === $stockDimKey) {
                             $stock_item['serial_ids'][] = $si['serial_id'];
                             if ($si['status'] !== 'sold') {
                                 $stock_item['available_serial_ids'][] = $si['serial_id'];
@@ -921,6 +1058,7 @@ class Product extends BaseModel {
     public function addSerializedItems($productId, $dimensions, $count, $warehouseId = null) {
         try {
             $entity_id = $_SESSION['current_entity_id'];
+            $dimensions = normalize_dimensions($dimensions);
             $stmt = $this->conn->prepare("INSERT INTO inventory_items (product_id, entity_id, dimensions, warehouse_id, status) VALUES (?, ?, ?, ?, 'in_stock')");
             for ($i = 0; $i < $count; $i++) {
                 $stmt->bind_param("iisi", $productId, $entity_id, $dimensions, $warehouseId);
@@ -944,6 +1082,7 @@ class Product extends BaseModel {
     public function updateSerializedItem($itemId, $dimensions, $serial_id = null, $warehouseId = null) {
         try {
             $entity_id = $_SESSION['current_entity_id'];
+            $dimensions = normalize_dimensions($dimensions);
             $stmt_check = $this->conn->prepare("SELECT id, product_id, dimensions, serial_id, warehouse_id, sales_invoice_item_id, purchase_invoice_item_id FROM inventory_items WHERE id = ? AND entity_id = ?");
             $stmt_check->bind_param("ii", $itemId, $entity_id);
             $stmt_check->execute();

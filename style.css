@@ -893,6 +893,11 @@ body.modal-open .modal .tab-pane.fade {
     border-top: none !important;
 }
 
+/* Items row takes its invoice's status colour, so each invoice reads as one block. */
+.invoice-details-row.is-unsettled > td { background-color: #fff3cd !important; }
+.invoice-details-row.is-settled > td { background-color: #d1e7dd !important; }
+.invoice-details-row:is(.is-settled, .is-unsettled) > td { border-bottom: 2px solid #adb5bd !important; padding-bottom: .5rem !important; }
+
 .invoice-details-row .table {
     margin: 0;
     font-size: 0.85em;
@@ -1318,6 +1323,17 @@ body {
 #price-list-container .price-per-meter-cell {
     min-width: 140px;
 }
+/* The gutter row's negative margins would make the list scroll sideways by a few px. */
+#price-list-container > .row {
+    margin-inline: 0;
+}
+/* Single-product price tables: two per row, three only where each still fits. */
+@media (min-width: 2200px) {
+    #single-products-price-list-row > .price-list-products-col {
+        flex: 0 0 auto;
+        width: 33.3333%;
+    }
+}
 
 /* Reports (all viewports): keep wide tables inside a horizontal scroll strip */
 #reports,
@@ -1465,3 +1481,46 @@ th.ui-sort-th[data-ui-sort="desc"] .ui-sort-ind::before { content: "\25BE"; }
 /* Dashboard sales card (classic): period picker sits in the white-on-blue title */
 .dashboard-sales-period-classic { background: transparent; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
 .dashboard-sales-period-classic option { color: #212529; background: #fff; }
+
+/* Checks maturity calendar (shared; also in modern/pages.css) */
+#checks-maturity-chart-wrap { position: relative; min-height: 220px; }
+#checks-maturity-chart-wrap canvas { max-height: 280px; }
+.checks-maturity-cal {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+    direction: rtl;
+}
+.checks-maturity-cal-head {
+    text-align: center;
+    font-size: .72rem;
+    color: #6c757d;
+    font-weight: 600;
+    padding: .2rem 0;
+}
+.checks-maturity-cal-day {
+    min-height: 72px;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: .35rem .4rem;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    cursor: default;
+    text-align: start;
+}
+.checks-maturity-cal-day.is-empty { opacity: .35; pointer-events: none; background: transparent; }
+.checks-maturity-cal-day.has-checks { cursor: pointer; }
+.checks-maturity-cal-day.has-checks:hover { border-color: #0d6efd; background: #f8f9fa; }
+.checks-maturity-cal-day.is-today { border-color: #0d6efd; box-shadow: inset 0 0 0 1px #0d6efd; }
+.checks-maturity-cal-day .day-num { font-size: .8rem; font-weight: 700; line-height: 1.2; }
+.checks-maturity-cal-day .day-amt {
+    font-size: .68rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.checks-maturity-cal-day .day-amt.is-in { color: #198754; }
+.checks-maturity-cal-day .day-amt.is-out { color: #dc3545; }

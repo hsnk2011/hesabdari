@@ -16,13 +16,15 @@ class NotificationController {
 
     /**
      * Notifications the user may see: whole-team rows (user_id NULL) plus the
-     * ones addressed to this user (CRM tasks, reminders).
+     * ones addressed to this user (CRM tasks, reminders). While «میز کار» is
+     * off its rows (crm_* / work_*) are hidden, not deleted.
      */
     public static function fetchVisible($db, int $entityId, ?int $userId, int $limit): array {
         $uid = (int)($userId ?? 0);
+        $workspaceFilter = workspace_enabled($db) ? '' : " AND type NOT LIKE 'crm\\_%' AND type NOT LIKE 'work\\_%'";
         $stmt = $db->prepare("
             SELECT * FROM notifications
-            WHERE entity_id = ? AND is_dismissed = 0 AND (user_id IS NULL OR user_id = ?)
+            WHERE entity_id = ? AND is_dismissed = 0 AND (user_id IS NULL OR user_id = ?){$workspaceFilter}
             ORDER BY due_date ASC, created_at DESC
             LIMIT " . max(1, $limit));
         $stmt->bind_param("ii", $entityId, $uid);

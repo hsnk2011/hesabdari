@@ -118,6 +118,16 @@ $v = function ($file) use ($appVersion) { return $file . '?v=' . rawurlencode($a
                     <option value="year">سالانه</option>
                 </select>
             </div>
+            <div class="sa-field">
+                <label for="sa-channel">نوع فروش</label>
+                <select id="sa-channel" class="form-select form-select-sm" title="فاکتورهای «داخلی» (درون‌گروهی) به‌طور پیش‌فرض در آمار نمی‌آیند">
+                    <option value="">خانگی + همکار/عمده</option>
+                    <option value="retail">فقط خانگی</option>
+                    <option value="trade">فقط همکار/عمده</option>
+                    <option value="internal">فقط داخلی</option>
+                    <option value="all">همه (با داخلی)</option>
+                </select>
+            </div>
         </div>
         <div class="sa-presets" role="group" aria-label="بازه‌های آماده">
             <button data-preset="7d">۷ روز اخیر</button>

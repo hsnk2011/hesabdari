@@ -186,11 +186,38 @@ function get_app_setting($conn, $key, $default = null) {
  * `dimension_cm_threshold` are treated as centimeters.
  */
 /**
+ * Canonical carpet dimensions for storage and PHP equality checks.
+ * "60X90" / "60 × 90" / "60*90" → "60x90". Named sizes (پادری) stay trimmed text.
+ * MySQL utf8mb4_unicode_ci hides case differences; PHP == does not — always store this form.
+ */
+function normalize_dimensions($input) {
+    if ($input === null) {
+        return '';
+    }
+    $s = trim((string)$input);
+    if ($s === '') {
+        return '';
+    }
+    $s = strtr($s, [
+        '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+        '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9', '٫' => '.',
+        '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+        '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+    ]);
+    $s = mb_strtolower($s, 'UTF-8');
+    $s = str_replace(['×', '✕', '✖', '*', 'х'], 'x', $s);
+    // «60 در 90» → 60x90, but only between numbers: «پادری» contains «در» too.
+    $s = preg_replace('/(\d)\s*در\s*(\d)/u', '$1x$2', $s);
+    $s = preg_replace('/\s+/u', '', $s);
+    return $s;
+}
+
+/**
  * Parse WxH dimension into meter sides [w, h], or null if not a numeric pair.
  * Named sizes (e.g. پادری) return null.
  */
 function dimension_sides_meters($conn, $dimension) {
-    $dim = trim((string)$dimension);
+    $dim = normalize_dimensions($dimension);
     if ($dim === '') {
         return null;
     }
@@ -199,14 +226,14 @@ function dimension_sides_meters($conn, $dimension) {
     if (!is_array($map)) {
         $map = ['پادری' => 0.4];
     }
-    if (array_key_exists($dim, $map)) {
+    if (array_key_exists($dim, $map) || array_key_exists(trim((string)$dimension), $map)) {
         return null;
     }
     $threshold = floatval(get_app_setting($conn, 'dimension_cm_threshold', 15));
     if ($threshold <= 0) {
         $threshold = 15;
     }
-    $parts = explode('x', str_replace(['*', '×'], 'x', mb_strtolower($dim)));
+    $parts = explode('x', $dim);
     if (count($parts) !== 2) {
         return null;
     }
@@ -227,7 +254,7 @@ function dimension_sides_meters($conn, $dimension) {
 function dimension_area($conn, $dimension) {
     $sides = dimension_sides_meters($conn, $dimension);
     if ($sides === null) {
-        $dim = trim((string)$dimension);
+        $dim = normalize_dimensions($dimension);
         if ($dim === '') {
             return 0.0;
         }
@@ -238,6 +265,10 @@ function dimension_area($conn, $dimension) {
         }
         if (array_key_exists($dim, $map)) {
             return floatval($map[$dim]);
+        }
+        $raw = trim((string)$dimension);
+        if ($raw !== '' && array_key_exists($raw, $map)) {
+            return floatval($map[$raw]);
         }
         return 0.0;
     }
@@ -421,20 +452,10 @@ function get_session_expires_at() {
 }
 
 /**
- * Normalize dimension strings for matching (192x150, 192*150, 192 X 150 → 192x150).
- */
-function normalize_dimensions($dimensions) {
-    $d = trim((string)($dimensions ?? ''));
-    $d = str_replace(['×', '✕', '*', 'X'], 'x', $d);
-    $d = preg_replace('/\s+/', '', $d);
-    return strtolower($d);
-}
-
-/**
- * SQL expression to normalize a dimension column for comparison.
+ * SQL expression to normalize a dimension column for comparison (mirrors normalize_dimensions).
  */
 function sql_normalize_dimensions_expr($column) {
-    return "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE({$column}, ''), ' ', ''), '*', 'x'), '×', 'x'), 'X', 'x'), '✕', 'x'))";
+    return "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE({$column}, ''), ' ', ''), '*', 'x'), '×', 'x'), 'X', 'x'), '✕', 'x'), '✖', 'x'))";
 }
 
 function send_json($data, $statusCode = 200) {
@@ -968,4 +989,18 @@ function generate_short_invoice_code($length = 8) {
  */
 function invoice_public_short_url($code) {
     return rtrim(app_public_base_url(), '/') . '/i.php?c=' . rawurlencode($code);
+}
+
+/**
+ * نوع فروش (sale_channel) فاکتور و مشتری:
+ *   retail = خانگی، trade = همکار/عمده، internal = داخلی (درون‌گروهی؛ در آمار فروش حساب نمی‌شود).
+ */
+function sale_channel_labels(): array {
+    return ['retail' => 'خانگی', 'trade' => 'همکار/عمده', 'internal' => 'داخلی'];
+}
+
+/** A valid sale_channel value, or null when the input is empty/unknown. */
+function normalize_sale_channel($value): ?string {
+    $v = strtolower(trim((string)($value ?? '')));
+    return array_key_exists($v, sale_channel_labels()) ? $v : null;
 }

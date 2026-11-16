@@ -4,6 +4,7 @@ const ReportGenerator = (function () {
     let appDataCache = {};
     let lastReportData = null;
     let lastReportType = null;
+    let cashListPrintSource = null;
     let lastReportParams = {};
 
     const formatCurrency = (num) => UI.formatCurrency(num);
@@ -239,8 +240,8 @@ const ReportGenerator = (function () {
             case 'inventory-ledger': _generateInventoryLedgerReport(apiData, container); break;
             case 'sales-invoices': _generateInvoicesReport('sales', apiData, container); break;
             case 'purchase-invoices': _generateInvoicesReport('purchase', apiData, container); break;
-            case 'expenses': _generateExpensesReport(apiData, container); break;
-            case 'incomes': _generateIncomesReport(apiData, container); break;
+            case 'expenses': _generateCashListReport('expenses', apiData, container); break;
+            case 'incomes': _generateCashListReport('incomes', apiData, container); break;
             case 'persons': _generatePersonStatementReport(apiData, container); break;
             case 'accounts': _generateAccountStatementReport(apiData, container); break;
             case 'cogs-profit': _generateCogsProfitReport(apiData, container); break;
@@ -261,45 +262,6 @@ const ReportGenerator = (function () {
                 $('#export-report-btn').show();
             }
         }
-    }
-
-    function _getPrintableInvoiceListHtml(type, data) {
-        const { invoices } = data;
-        const { persianStartDate, persianEndDate } = lastReportParams;
-        const isSales = type === 'sales', title = isSales ? 'فاکتورهای فروش' : 'فاکتورهای خرید';
-        const personTitle = isSales ? 'مشتری' : 'تامین‌کننده';
-        const entityName = App.getAppState().businessEntities.find(e => e.id == App.getAppState().currentEntityId)?.name || 'مجموعه';
-
-        let reportHtml = `<h4 class="mb-3">گزارش ${title} برای «${entityName}» از ${persianStartDate} تا ${persianEndDate}</h4>`;
-        if (!invoices || invoices.length === 0) {
-            reportHtml += `<p class="text-center">فاکتوری در این بازه زمانی یافت نشد.</p>`;
-            return reportHtml;
-        }
-
-        invoices.forEach(inv => {
-            const personName = isSales ? inv.customerName : inv.supplierName;
-            const invoiceDate = UI.gregorianToPersian(inv.date);
-            let itemsHtml = '<table class="table table-sm table-bordered"><thead><tr><th>محصول</th><th>تعداد</th><th>قیمت واحد</th><th>جمع</th></tr></thead><tbody>';
-            (inv.items || []).forEach(item => { itemsHtml += `<tr><td>${_formatInvoiceItemLabel(item)}</td><td>${item.quantity}</td><td>${formatCurrency(item.unitPrice)}</td><td>${formatCurrency(item.quantity * item.unitPrice)}</td></tr>`; });
-            itemsHtml += '</tbody></table>';
-
-            let paymentsHtml = '<table class="table table-sm table-bordered"><thead><tr><th>نوع</th><th>تاریخ</th><th>مبلغ</th><th>جزئیات</th></tr></thead><tbody>';
-            if (inv.payments && inv.payments.length > 0) (inv.payments || []).forEach(p => { let det = p.description || '-'; if (p.checkDetails) det = `ش:${p.checkDetails.checkNumber}, بانک:${p.checkDetails.bankName}`; paymentsHtml += `<tr><td>${p.type}</td><td>${UI.gregorianToPersian(p.date)}</td><td>${formatCurrency(p.amount)}</td><td>${det}</td></tr>`; }); else paymentsHtml += `<tr><td colspan="4" class="text-center">پرداختی ندارد</td></tr>`
-            paymentsHtml += '</tbody></table>';
-
-            reportHtml += `
-                <div class="card mb-3">
-                    <div class="card-header">فاکتور #${inv.id} | ${personTitle}: <strong>${personName || ''}</strong> | تاریخ: ${invoiceDate}</div>
-                    <div class="card-body row"><div class="col-md-7"><h5>اقلام</h5>${itemsHtml}</div><div class="col-md-5"><h5>پرداخت‌ها</h5>${paymentsHtml}</div></div>
-                    <div class="card-footer d-flex justify-content-end gap-3 flex-wrap">
-                        <span class="badge bg-primary">کل: ${formatCurrency(inv.totalAmount)}</span>
-                        <span class="badge bg-info text-dark">تخفیف: ${formatCurrency(inv.discount || 0)}</span>
-                        <span class="badge bg-success">پرداختی: ${formatCurrency(inv.paidAmount)}</span>
-                        <span class="badge bg-danger">مانده: ${formatCurrency(inv.remainingAmount)}</span>
-                    </div>
-                </div>`;
-        });
-        return reportHtml;
     }
 
     function _generateInvoicesReport(type, data, container) {
@@ -538,69 +500,36 @@ const ReportGenerator = (function () {
             return;
         }
 
-        const title = container.find('h4').first().text() || "گزارش";
-        let contentHtml = '';
-
-        if (lastReportType === 'sales-invoices' || lastReportType === 'purchase-invoices') {
-            contentHtml = _getPrintableInvoiceListHtml(lastReportType.includes('sales') ? 'sales' : 'purchase', lastReportData);
-        } else {
-            const clonedContainer = container.clone();
-            clonedContainer.find('.no-print, .dataTables_filter, .dataTables_length, .dataTables_info, .dataTables_paginate, .accordion-button, .btn-group').remove();
-            clonedContainer.find('.accordion-collapse').addClass('show');
-            contentHtml = clonedContainer.html();
-        }
-
-        const printWin = window.open('', '_blank');
-        if (!printWin) {
-            UI.showError('پنجره چاپ مسدود شد. لطفاً popup blocker مرورگر را غیرفعال کنید.');
+        if ((lastReportType === 'expenses' || lastReportType === 'incomes') && cashListPrintSource && cashListPrintSource.kind === lastReportType) {
+            const entityName = App.getAppState().businessEntities.find(e => e.id == App.getAppState().currentEntityId)?.name || '';
+            CashReportPrint.open(lastReportType, cashListPrintSource.rows(), {
+                ...lastReportParams,
+                entityName,
+                search: cashListPrintSource.search(),
+                totalCount: cashListPrintSource.totalCount
+            });
             return;
         }
-        printWin.document.write(`
-            <html>
-                <head>
-                    <title>${title}</title>
-                    <link rel="stylesheet" href="assets/css/bootstrap.rtl.min.css">
-                    <link rel="stylesheet" href="assets/css/vazirmatn-font-face.css">
-                    <style>
-                        body { 
-                            font-family: Vazirmatn, sans-serif; 
-                            direction: rtl; 
-                            background-color: #fff !important; 
-                            -webkit-print-color-adjust: exact; 
-                        }
-                        @media print {
-                            body {
-                                -webkit-print-color-adjust: exact; 
-                                print-color-adjust: exact;
-                            }
-                            .no-print { 
-                                display: none !important; 
-                            }
-                            .card { 
-                                page-break-inside: avoid; 
-                                border: 1px solid #dee2e6 !important;
-                                box-shadow: none !important;
-                            }
-                            a {
-                                text-decoration: none;
-                                color: #000;
-                            }
-                        }
-                        table th { text-align: right !important; }
-                    </style>
-                </head>
-                <body>
-                    <div class="container-fluid mt-4">
-                        ${contentHtml}
-                    </div>
-                </body>
-            </html>`);
-        printWin.document.close();
-        printWin.focus();
-        setTimeout(() => {
-            printWin.print();
-            printWin.close();
-        }, 500);
+
+        if (lastReportType === 'sales-invoices' || lastReportType === 'purchase-invoices') {
+            const esc = (v) => UI.escapeHtml(v == null ? '' : String(v));
+            const itemLabel = (item) => {
+                if (item.is_service == 1) return `${esc(item.item_description || item.productName || 'خدمات')} <small>(خدمات)</small>`;
+                const name = esc(item.productName || 'حذف شده');
+                return item.dimensions ? `${name} <bdi>(${esc(item.dimensions)})</bdi>` : name;
+            };
+            ReportPrint.openDocument(ReportPrint.invoiceListOptions(
+                lastReportType === 'sales-invoices' ? 'sales' : 'purchase', lastReportData, lastReportParams, itemLabel));
+            return;
+        }
+
+        // Every other report: the on-screen report rebuilt as a document (all filtered rows,
+        // every tab, details open) inside the shared letterhead.
+        return ReportPrint.openDocumentWhenReady(async () => {
+            await ReportPrint.prepareContainer(container);
+            const doc = ReportPrint.fromContainer(container);
+            return { title: doc.title, bodyHtml: doc.bodyHtml, landscape: doc.wide, details: doc.hasDetails, detailsOff: true };
+        });
     }
 
     function exportCsv() {
@@ -659,6 +588,34 @@ const ReportGenerator = (function () {
         }
 
         window.location.href = `${AppConfig.API_URL}?action=export_report&${params.toString()}`;
+    }
+
+    /** فروش خالص و سود ناخالص به تفکیک نوع فروش (خانگی / همکار-عمده / داخلی). */
+    function salesByChannelHtml(rows, netSales) {
+        const list = (rows || []).filter(r => Number(r.invoices) > 0 || Math.abs(Number(r.netSales) || 0) > 0.5);
+        if (!list.length) return '';
+        const hasProfit = list.some(r => r.grossProfit !== null && r.grossProfit !== undefined);
+        const total = Number(netSales) || 0;
+        const body = list.map(r => {
+            const share = total > 0 ? (Number(r.netSales) / total * 100).toFixed(1) + '٪' : '—';
+            return `<tr>
+                <td>${UI.escapeHtml(r.label)}</td>
+                <td class="text-end">${formatCurrency(r.netSales)}</td>
+                <td class="text-end text-muted">${share}</td>
+                ${hasProfit ? `<td class="text-end ${Number(r.grossProfit) >= 0 ? 'text-success' : 'text-danger'}">${formatCurrency(r.grossProfit)}</td>
+                <td class="text-end">${r.marginPercent === null || r.marginPercent === undefined ? '—' : Number(r.marginPercent).toFixed(1) + '٪'}</td>` : ''}
+                <td class="text-end">${Number(r.invoices || 0).toLocaleString('fa-IR')}</td>
+            </tr>`;
+        }).join('');
+        return `<div class="mb-3 pl-sales-by-channel">
+            <div class="small fw-bold mb-1"><i class="bi bi-shop me-1"></i>فروش به تفکیک نوع</div>
+            <div class="report-table-scroll" style="overflow-x:auto;min-height:0"><table class="table table-sm mb-1 small">
+                <thead><tr><th>نوع فروش</th><th class="text-end">فروش خالص</th><th class="text-end">سهم</th>
+                ${hasProfit ? '<th class="text-end">سود ناخالص</th><th class="text-end">حاشیه</th>' : ''}<th class="text-end">فاکتور</th></tr></thead>
+                <tbody>${body}</tbody>
+            </table></div>
+            ${hasProfit ? '<div class="form-text">سود هر ردیف بدون کسری/اضافی انبارگردانی و خدمات خرید است؛ این‌ها فقط در جمع کل آمده‌اند.</div>' : ''}
+        </div>`;
     }
 
     function _generateProfitLossReport(data, container) {
@@ -732,6 +689,11 @@ const ReportGenerator = (function () {
                     <div class="d-flex justify-content-between py-2 border-bottom">
                         <span><i class="bi bi-clipboard-plus text-success me-2"></i>اضافی انبارگردانی</span>
                         <span class="text-success">${formatCurrency(data.stocktakingSurplus)}</span>
+                    </div>` : ''}
+                    ${Number(data.purchaseServices || 0) > 0 ? `
+                    <div class="d-flex justify-content-between py-2 border-bottom">
+                        <span><i class="bi bi-tools text-danger me-2"></i>خدمات فاکتورهای خرید</span>
+                        <span class="text-danger">(${formatCurrency(data.purchaseServices)})</span>
                     </div>` : ''}
                     <div class="d-flex justify-content-between py-2 bg-light rounded px-2 mt-2">
                         <span><i class="bi bi-calculator text-info me-2"></i><strong>بهای تمام‌شده خالص</strong></span>
@@ -812,7 +774,11 @@ const ReportGenerator = (function () {
             qualityAlerts.push(`<li>${dataQuality.unlinkedSaleLines} ردیف فروش بدون لینک انبار (حدود ${formatCurrency(dataQuality.unlinkedSaleValue)}) — بهای تمام‌شده‌شان صفر لحاظ شده</li>`);
         }
         if (dataQuality.zeroCostSoldItems > 0) {
-            qualityAlerts.push(`<li>${dataQuality.zeroCostSoldItems} قلم فروخته‌شده با بهای صفر (فروش حدود ${formatCurrency(dataQuality.zeroCostSaleValue)}) — سود را بیشتر نشان می‌دهد</li>`);
+            const zeroInv = (dataQuality.zeroCostPurchaseInvoices || []).map(id => '#' + Number(id)).join('، ');
+            qualityAlerts.push(`<li>${dataQuality.zeroCostSoldItems} قلم فروخته‌شده با بهای صفر (فروش حدود ${formatCurrency(dataQuality.zeroCostSaleValue)}) — سود را بیشتر نشان می‌دهد${zeroInv ? `؛ قیمت خرید را در این فاکتورهای خرید وارد کنید: ${zeroInv}` : ''}</li>`);
+        }
+        if (dataQuality.zeroCostStockItems > 0) {
+            qualityAlerts.push(`<li>${dataQuality.zeroCostStockItems} فرش در انبار قیمت خرید صفر دارند — ارزش انبار کمتر از واقع است</li>`);
         }
 
         let html = `
@@ -992,6 +958,7 @@ const ReportGenerator = (function () {
                                 <strong><i class="bi bi-check-circle text-primary me-2"></i>فروش خالص</strong>
                                 <strong class="text-primary">${formatCurrency(netSales)}</strong>
                             </div>
+                            ${salesByChannelHtml(data.salesByChannel, netSales)}
                             ${calculationMethodInfo.costHtml}
                         </div>
                         <div class="card-footer bg-light">
@@ -1840,38 +1807,40 @@ const ReportGenerator = (function () {
         });
     }
 
-    function _generateExpensesReport(data, container) {
+    // Expenses and incomes: one list builder. The footer total follows the table search
+    // (sum of the filtered rows), and the print form gets every filtered row, not one page.
+    function _generateCashListReport(kind, data, container) {
         const { persianStartDate, persianEndDate } = lastReportParams;
-        const { expenses, total } = data;
-        let reportHtml = `<h4 class="mb-3">گزارش هزینه‌ها از ${persianStartDate} تا ${persianEndDate}</h4>`;
-        if (expenses.length === 0) {
-            container.html(reportHtml + `<p class="text-center">هیچ هزینه‌ای یافت نشد.</p>`);
+        cashListPrintSource = null;
+        const isExp = kind === 'expenses';
+        const items = (isExp ? data.expenses : data.incomes) || [];
+        const tableId = isExp ? 'expenses-report-table' : 'incomes-report-table';
+        let reportHtml = `<h4 class="mb-3">${isExp ? 'گزارش هزینه‌ها' : 'گزارش درآمدها'} از ${UI.escapeHtml(persianStartDate || '')} تا ${UI.escapeHtml(persianEndDate || '')}</h4>`;
+        if (items.length === 0) {
+            container.html(reportHtml + `<p class="text-center">${isExp ? 'هیچ هزینه‌ای یافت نشد.' : 'هیچ درآمدی یافت نشد.'}</p>`);
             return;
         }
-        reportHtml += `<table id="expenses-report-table" class="table table-striped table-bordered" style="width:100%"><thead class="table-light"><tr><th>تاریخ</th><th>دسته‌بندی</th><th>مبلغ</th><th>توضیحات</th><th>حساب پرداخت</th></tr></thead><tbody>`;
-        expenses.forEach(exp => {
-            reportHtml += `<tr><td>${UI.gregorianToPersian(exp.date)}</td><td>${exp.category}</td><td>${formatCurrency(exp.amount)}</td><td>${exp.description || '-'}</td><td>${exp.accountName || '-'}</td></tr>`;
+        const esc = (v) => UI.escapeHtml(v == null ? '' : String(v));
+        reportHtml += `<table id="${tableId}" class="table table-striped table-bordered" style="width:100%"><thead class="table-light"><tr><th>تاریخ</th><th>دسته‌بندی</th><th>مبلغ</th><th>توضیحات</th><th>${isExp ? 'حساب پرداخت' : 'حساب دریافت'}</th></tr></thead><tbody>`;
+        items.forEach((row, i) => {
+            reportHtml += `<tr data-idx="${i}"><td data-order="${esc(row.date)}">${UI.gregorianToPersian(row.date)}</td><td>${esc(row.category)}</td><td data-order="${Number(row.amount) || 0}">${formatCurrency(row.amount)}</td><td>${esc(row.description || '-')}</td><td>${esc(row.accountName || '-')}</td></tr>`;
         });
-        reportHtml += `</tbody><tfoot class="fw-bold"><tr class="table-secondary"><td colspan="2" class="text-end">جمع کل:</td><td colspan="3">${formatCurrency(total)}</td></tr></tfoot></table>`;
+        reportHtml += `</tbody><tfoot class="fw-bold"><tr class="table-secondary"><td colspan="2" class="text-end js-total-label">جمع کل:</td><td colspan="3" class="js-total-value">${formatCurrency(data.total)}</td></tr></tfoot></table>`;
         container.html(reportHtml);
-        _initDataTable('#expenses-report-table');
-    }
-
-    function _generateIncomesReport(data, container) {
-        const { persianStartDate, persianEndDate } = lastReportParams;
-        const { incomes, total } = data;
-        let reportHtml = `<h4 class="mb-3">گزارش درآمدها از ${persianStartDate} تا ${persianEndDate}</h4>`;
-        if (!incomes || incomes.length === 0) {
-            container.html(reportHtml + `<p class="text-center">هیچ درآمدی یافت نشد.</p>`);
-            return;
-        }
-        reportHtml += `<table id="incomes-report-table" class="table table-striped table-bordered" style="width:100%"><thead class="table-light"><tr><th>تاریخ</th><th>دسته‌بندی</th><th>مبلغ</th><th>توضیحات</th><th>حساب دریافت</th></tr></thead><tbody>`;
-        incomes.forEach(inc => {
-            reportHtml += `<tr><td>${UI.gregorianToPersian(inc.date)}</td><td>${inc.category}</td><td>${formatCurrency(inc.amount)}</td><td>${inc.description || '-'}</td><td>${inc.accountName || '-'}</td></tr>`;
-        });
-        reportHtml += `</tbody><tfoot class="fw-bold"><tr class="table-secondary"><td colspan="2" class="text-end">جمع کل:</td><td colspan="3">${formatCurrency(total)}</td></tr></tfoot></table>`;
-        container.html(reportHtml);
-        _initDataTable('#incomes-report-table');
+        const dt = _initDataTable(`#${tableId}`, { order: [] });
+        const filteredRows = () => dt.rows({ search: 'applied', order: 'applied' }).nodes().toArray()
+            .map(tr => items[tr.getAttribute('data-idx')]).filter(Boolean);
+        const updateTotal = () => {
+            const rows = filteredRows();
+            const sum = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+            const filtered = rows.length !== items.length;
+            const $foot = $(dt.table().footer());
+            $foot.find('.js-total-label').text(filtered ? `جمع نتایج جستجو (${rows.length} از ${items.length} مورد):` : 'جمع کل:');
+            $foot.find('.js-total-value').text(formatCurrency(sum));
+        };
+        dt.on('draw', updateTotal);
+        updateTotal();
+        cashListPrintSource = { kind, rows: filteredRows, search: () => dt.search(), totalCount: items.length };
     }
 
     function _generateInventoryReport(data, container) {

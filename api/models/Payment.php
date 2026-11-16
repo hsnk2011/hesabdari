@@ -93,6 +93,11 @@ class Payment extends BaseModel {
     }
 
     /** True for one leg of a setoff / تهاتر pair (customer ↔ supplier/contact). */
+    /** Partner profit/loss share written by «بستن حساب»; only reopening the closing removes it. */
+    public static function isClosingPosting(array $payment) {
+        return strncmp((string)($payment['description'] ?? ''), 'CLOSING:', 8) === 0;
+    }
+
     public static function isSetoffLeg(array $payment) {
         return ($payment['type'] ?? '') === 'setoff' && !empty($payment['setoff_group_id']);
     }
@@ -531,6 +536,9 @@ class Payment extends BaseModel {
                 }
                 if ($oldPayment && self::isSetoffLeg($oldPayment)) {
                     throw new Exception('این تراکنش تهاتر است؛ برای اصلاح، آن را حذف و دوباره از فاکتور فروش ثبت کنید.', 400);
+                }
+                if ($oldPayment && self::isClosingPosting($oldPayment)) {
+                    throw new Exception('این ردیف سهم سود ثبت‌شده در بستن حساب است؛ برای تغییر، بستن حساب را بازگشایی کنید.', 400);
                 }
 
                 if ($oldPayment) {
@@ -1221,6 +1229,9 @@ class Payment extends BaseModel {
                 }
                 if (self::isTransferLeg($payment)) {
                     throw new Exception('این تراکنش یک طرف از انتقال وجه است؛ از «حذف انتقال» استفاده کنید تا هر دو طرف با هم حذف شوند.', 400);
+                }
+                if (self::isClosingPosting($payment)) {
+                    throw new Exception('این ردیف سهم سود ثبت‌شده در بستن حساب است؛ برای حذف، بستن حساب را بازگشایی کنید.', 400);
                 }
             }
 

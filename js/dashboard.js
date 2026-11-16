@@ -28,6 +28,24 @@ const Dashboard = (function () {
             $('#dashboard-total-sales').text(UI.formatCurrency(data.salesLast30Days || 0));
             $('#dashboard-total-sales-note').text('جمع فاکتورهای فروش یک ماه اخیر');
         }
+        renderSalesChannels(period === 'mtd' ? data.salesMonthToDateByChannel : data.salesLast30DaysByChannel);
+    }
+
+    /** زیر کارت فروش: سهم خانگی و همکار/عمده (و داخلی اگر باشد، که در جمع نیست). */
+    function renderSalesChannels(byChannel) {
+        let box = $('#dashboard-sales-channels');
+        if (!box.length) {
+            box = $('<div id="dashboard-sales-channels" class="small mt-1" style="opacity:.85"></div>');
+            $('#dashboard-total-sales').after(box);
+        }
+        const c = byChannel || {};
+        const retail = Number(c.retail) || 0, trade = Number(c.trade) || 0, internal = Number(c.internal) || 0;
+        if (!trade && !internal) { box.empty().hide(); return; }
+        const total = retail + trade;
+        const pct = (v) => total > 0 ? Math.round(v / total * 100).toLocaleString('fa-IR') + '٪' : '—';
+        let html = `خانگی ${UI.formatCurrency(retail)} (${pct(retail)}) · همکار/عمده ${UI.formatCurrency(trade)} (${pct(trade)})`;
+        if (internal) html += `<br>داخلی (جزو جمع نیست): ${UI.formatCurrency(internal)}`;
+        box.html(html).show();
     }
 
     // تطبیق سفارش کارخانه با موجودی انبار فیزیکی (ابعاد نزدیک) + جستجو در سفارش‌ها

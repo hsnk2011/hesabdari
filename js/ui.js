@@ -2394,6 +2394,20 @@ const UI = (function () {
     // invoice/quotation/return modules so all three always agree with the server.
     const roundMoney = (num) => Math.round(Number(num || 0) * 100) / 100;
 
+    /** Canonical dimensions: "60X90" / "60 × 90" / "60*90" → "60x90". */
+    const normalizeDimensions = (dimension) => {
+        let s = String(dimension || '').trim();
+        if (!s) return '';
+        s = s.replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+        s = s.replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+        s = s.replace(/٫/g, '.');
+        s = s.toLowerCase();
+        // «60 در 90» → 60x90, but only between numbers: «پادری» contains «در» too.
+        s = s.replace(/[×✕✖*х]/g, 'x').replace(/(\d)\s*در\s*(\d)/g, '$1x$2');
+        s = s.replace(/\s+/g, '');
+        return s;
+    };
+
     /**
      * Area (m²) for a carpet dimension string.
      * Named dimensions (e.g. «پادری») come from the `dimension_area_map`
@@ -2401,7 +2415,7 @@ const UI = (function () {
      * setting are treated as centimeters. Mirrors PriceList::dimensionArea().
      */
     const dimensionArea = (dimension) => {
-        const dim = String(dimension || '').trim();
+        const dim = normalizeDimensions(dimension);
         if (!dim) return 0;
         const defaults = (typeof AppConfig !== 'undefined' && AppConfig.DEFAULTS) || {};
         let map = defaults.DIMENSION_AREA_MAP || { 'پادری': 0.4 };
@@ -2427,9 +2441,20 @@ const UI = (function () {
         return w * h;
     };
 
+    /** نوع فروش فاکتور/مشتری: retail خانگی، trade همکار/عمده، internal داخلی */
+    const SALE_CHANNEL_LABELS = { retail: 'خانگی', trade: 'همکار/عمده', internal: 'داخلی' };
+    function saleChannelLabel(ch) { return SALE_CHANNEL_LABELS[ch] || SALE_CHANNEL_LABELS.retail; }
+    /** Small badge; retail shows nothing unless showRetail (it is the default). */
+    function saleChannelBadge(ch, showRetail = false) {
+        if (ch === 'trade') return '<span class="badge rounded-pill text-bg-info sale-channel-badge" title="نوع فروش">همکار/عمده</span>';
+        if (ch === 'internal') return '<span class="badge rounded-pill text-bg-secondary sale-channel-badge" title="نوع فروش: داخلی، در آمار فروش نمی‌آید">داخلی</span>';
+        return showRetail ? '<span class="badge rounded-pill text-bg-light border sale-channel-badge" title="نوع فروش">خانگی</span>' : '';
+    }
+
     window.InvoicePrintHost = { generateInvoicePrintHtml };
 
     return {
+        saleChannelLabel, saleChannelBadge,
         showLoader, hideLoader, formatCurrency, formatNumber, toEnglishDigits, escapeHtml, setHtmlSafe, toGregorian, gregorianToPersian,
         today, firstDayOfYear, initializeDatepickers, renderPagination, updateSortIndicators,
         debounce, initNumericFormatting, confirmAction, confirm, confirmText, formDialog, showModalError, hideModalError, showSuccess, showError, showInfo,
@@ -2437,6 +2462,6 @@ const UI = (function () {
         generateWarehouseInOutSheetHtml, getPrintSettings, printInvoice, printStocktakingCountSheet,
         printWarehouseInOutSheet,
         openSmsConfirmModal, initDarkMode, roundMoney, init,
-        getAppSetting, getCurrencyLabel, dimensionArea
+        getAppSetting, getCurrencyLabel, dimensionArea, normalizeDimensions
     };
 })();

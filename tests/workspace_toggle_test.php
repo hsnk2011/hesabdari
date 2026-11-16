@@ -1,7 +1,7 @@
 <?php
 /**
  * «میز کار» on/off switch (settings.workspace_enabled): permissions, setting
- * whitelist, expense project options and background jobs.
+ * whitelist, expense project options, background jobs and its notifications.
  * Run: php tests/workspace_toggle_test.php
  */
 declare(strict_types=1);
@@ -14,6 +14,7 @@ require_once $root . '/api/core/helpers.php';
 require_once $root . '/api/models/BaseModel.php';
 require_once $root . '/api/models/User.php';
 require_once $root . '/api/models/Settings.php';
+require_once $root . '/api/controllers/NotificationController.php';
 
 $passed = 0; $failed = 0;
 function expect_true(bool $c, string $m): void { global $passed, $failed; if ($c) { $passed++; echo "[PASS] $m\n"; } else { $failed++; echo "[FAIL] $m\n"; } }
@@ -63,8 +64,21 @@ try {
     }
     $work = file_get_contents($root . '/api/controllers/WorkController.php');
     expect_true((bool)preg_match('/function projectOptions\(\$data\) \{\s*.*\n\s*if \(!workspace_enabled/', $work), 'expense project options are empty while it is off');
+
+    // Notifications made while it was on (digest, task reminders) are hidden while it is off.
+    $entityId = 1;
+    foreach (['crm_digest', 'work_task', 'check_due'] as $type) {
+        $conn->query("INSERT INTO notifications (entity_id, user_id, type, title) VALUES ({$entityId}, {$userId}, '{$type}', '{$token} {$type}')");
+    }
+    $mine = fn() => array_values(array_filter(array_column(NotificationController::fetchVisible($conn, $entityId, $userId, 1000), 'title'), fn($t) => strpos((string)$t, $token) === 0));
+    expect_true(count($mine()) === 3, 'workspace notifications are listed while it is on');
+    $settings->saveAllSettings(['workspace_enabled' => '0']);
+    expect_true($mine() === ["{$token} check_due"], 'only non-workspace notifications are listed while it is off');
+    $settings->saveAllSettings(['workspace_enabled' => '1']);
+    expect_true(count($mine()) === 3, 'they come back (not deleted) when it is on again');
 } finally {
     if ($roleId) { $conn->query("DELETE FROM roles WHERE id = {$roleId}"); }
+    $conn->query("DELETE FROM notifications WHERE title LIKE '{$token} %'");
     if ($userId) { $conn->query("DELETE FROM users WHERE id = {$userId}"); }
     $conn->query("DELETE FROM settings WHERE setting_key = 'workspace_enabled'");
     if ($saved !== null) {

@@ -35,6 +35,9 @@ function createEntityManager(config) {
         if (state.balanceFilter) {
             payload.balanceFilter = state.balanceFilter;
         }
+        if (state.saleChannelFilter) {
+            payload.saleChannelFilter = state.saleChannelFilter;
+        }
         if (state.includeUncashedChecks) {
             payload.includeUncashedChecks = true;
         }

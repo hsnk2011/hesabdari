@@ -125,15 +125,48 @@ const TableSort = (function () {
     }
 
     /**
-     * Report results wrap their text so wide reports fit the page; cells that
-     * hold a single amount, date or number are tagged to stay on one line.
+     * On wide screens table text wraps so tables fit the page without sideways
+     * scrolling (see modern/pages.css). Cells that must stay on one line are
+     * tagged here:
+     *   .ui-fig — a single amount, date or number,
+     *   .ui-ctl — only controls: buttons, a status dropdown, badges, a switch.
+     * A cell is re-checked when its text changes (rows are redrawn in place).
      */
     const DATE_RE = /^\d{4}\/\d{1,2}\/\d{1,2}$/;
+    const CTL_SEL = '.btn, .btn-group, .dropdown, .badge, .form-check, .form-switch';
+    function ownText(td) {
+        let text = '';
+        td.childNodes.forEach((n) => {
+            if (n.nodeType === 3) text += n.textContent;
+            else if (n.nodeType === 1 && !n.matches('.dropdown-menu, .visually-hidden')) {
+                const clone = n.cloneNode(true);
+                clone.querySelectorAll('.dropdown-menu, .visually-hidden').forEach((m) => m.remove());
+                text += ' ' + clone.textContent;
+            }
+        });
+        return text.replace(/\s+/g, ' ').trim();
+    }
+    function isControlCell(td) {
+        if (!td.querySelector(CTL_SEL) || td.querySelector('table, br, p, ul:not(.dropdown-menu)')) return false;
+        // Every visible piece of the cell is a control (or sits inside one).
+        for (const n of td.childNodes) {
+            if (n.nodeType === 3) { if (n.textContent.trim()) return false; continue; }
+            if (n.nodeType !== 1 || n.matches('.dropdown-menu, input[type="hidden"]')) continue;
+            if (n.matches(CTL_SEL) || n.matches('a, i')) continue;
+            if (n.matches('div, span') && n.querySelector(CTL_SEL) && !Array.prototype.some.call(n.childNodes,
+                (c) => c.nodeType === 3 && c.textContent.trim())) continue;
+            return false;
+        }
+        return ownText(td).length <= 40;
+    }
     function markFigureCells(root) {
-        const box = (root || document).querySelector ? (root || document).querySelector('#report-results-container') : null;
-        if (!box) return;
-        box.querySelectorAll('table > tbody > tr > td:not([data-ui-fig])').forEach((td) => {
-            td.setAttribute('data-ui-fig', '');
+        (root || document).querySelectorAll('table > tbody > tr > td').forEach((td) => {
+            const sig = td.childElementCount + ':' + td.textContent.length;
+            if (td.getAttribute('data-ui-fig') === sig) return;
+            td.setAttribute('data-ui-fig', sig);
+            td.classList.remove('ui-fig', 'ui-ctl');
+            if (td.colSpan > 1) return;
+            if (isControlCell(td)) { td.classList.add('ui-ctl'); return; }
             if (td.children.length > 1 || td.querySelector('table, div, br')) return;
             const text = td.textContent.replace(/\s+/g, ' ').trim();
             if (!text || text.length > 40) return;

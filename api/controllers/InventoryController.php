@@ -551,7 +551,7 @@ class InventoryController {
         try {
             foreach ($items as $row) {
                 $itemId = intval($row['id'] ?? 0);
-                $newDimensions = trim((string)($row['dimensions'] ?? ''));
+                $newDimensions = normalize_dimensions($row['dimensions'] ?? '');
                 $newSerial = array_key_exists('serial_id', $row) ? trim((string)$row['serial_id']) : null;
                 if ($itemId <= 0) {
                     continue;

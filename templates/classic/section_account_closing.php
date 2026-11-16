@@ -128,7 +128,6 @@
                             <div class="col-md-6">
                                 <label class="form-label fw-bold">روش محاسبه سود</label>
                                 <select class="form-select" id="close-calc-method">
-                                    <option value="standard">استاندارد (فروش − خرید)</option>
                                     <option value="cogs">بر اساس بهای تمام‌شده (FIFO)</option>
                                     <option value="inventory">بر اساس موجودی انبار</option>
                                 </select>
@@ -199,7 +198,7 @@
                         <div class="form-check form-switch mt-3">
                             <input class="form-check-input" type="checkbox" id="close-post-profit">
                             <label class="form-check-label" for="close-post-profit">
-                                ثبت سهم سود در حساب شخصی شرکا (تراکنش نقدی در روز بعد از تاریخ بستن)
+                                ثبت سهم سود در صورتحساب شرکا (سند غیرنقدی به تاریخ بستن؛ موجودی هیچ حسابی تغییر نمی‌کند)
                             </label>
                         </div>
                         <div class="alert alert-warning mt-3 small mb-0">

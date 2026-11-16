@@ -17,7 +17,7 @@ class StocktakingController {
     }
 
     private function normalizeDimensions($value) {
-        return trim((string)($value ?? ''));
+        return normalize_dimensions($value);
     }
 
     private function itemUniqueKey($productId, $dimensions, $warehouseId) {

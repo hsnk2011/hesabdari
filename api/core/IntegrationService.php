@@ -227,11 +227,7 @@ class IntegrationService {
      * 192×150, 192 * 150 → 192x150
      */
     public function normalizeDimensions($input) {
-        if ($input === null || $input === '') return '';
-        $s = trim((string)$input);
-        $s = preg_replace('/[×✕*X]/iu', 'x', $s);
-        $s = preg_replace('/\s+/', '', $s);
-        return mb_strtolower($s, 'UTF-8');
+        return normalize_dimensions($input);
     }
 
     public function upsertMtoJobs($entityId, $jobs) {

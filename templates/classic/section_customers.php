@@ -5,7 +5,7 @@
     </div>
     <div id="customers-filter-info"></div>
     <div class="row g-2 align-items-center mb-3">
-        <div class="col-md-5">
+        <div class="col-md-3">
             <div class="input-group search-box">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                 <input type="text" class="form-control" id="customer-search" placeholder="جستجو در نام، آدرس، تلفن، کد ملی...">
@@ -26,6 +26,14 @@
                 <option value="positive">فقط بدهکار</option>
                 <option value="negative">فقط بستانکار</option>
                 <option value="settled">تسویه‌شده</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select class="form-select" id="customers-channel-filter" title="نوع فروش">
+                <option value="">همه انواع</option>
+                <option value="retail">خانگی</option>
+                <option value="trade">همکار/عمده</option>
+                <option value="internal">داخلی</option>
             </select>
         </div>
         <div class="col-md-2 text-end">
@@ -87,6 +95,19 @@
                         <div class="col-6">
                             <label for="customer-group" class="form-label">گروه مشتری</label>
                             <select class="form-select" id="customer-group"><option value="">— بدون گروه —</option></select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="customer-sale-channel" class="form-label">نوع فروش</label>
+                        <select class="form-select" id="customer-sale-channel">
+                            <option value="retail">خانگی</option>
+                            <option value="trade">همکار/عمده</option>
+                            <option value="internal">داخلی (درون‌گروهی — در آمار فروش نمی‌آید)</option>
+                        </select>
+                        <div class="form-text">فاکتورهای تازهٔ این مشتری با همین نوع ثبت می‌شوند و در فرم فاکتور قابل تغییرند.</div>
+                        <div class="form-check mt-1 customer-channel-apply-wrap" style="display:none;">
+                            <input class="form-check-input" type="checkbox" id="customer-channel-apply" checked>
+                            <label class="form-check-label small" for="customer-channel-apply">فاکتورهای قبلی این مشتری هم همین نوع شوند</label>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-success w-100">ذخیره</button>

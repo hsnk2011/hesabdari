@@ -187,7 +187,9 @@ expect_true(is_array($badMethod) && isset($badMethod['error']), 'Rejects unknown
 $okMethod = invoke_private($closing, 'normalizeCalculationMethod', ['cogs']);
 expect_true($okMethod === 'cogs', 'Accepts cogs calculationMethod');
 $defaultMethod = invoke_private($closing, 'normalizeCalculationMethod', ['']);
-expect_true($defaultMethod === 'standard', 'Empty calculationMethod defaults to standard');
+expect_true($defaultMethod === 'cogs', 'Empty calculationMethod defaults to cogs');
+$standardMethod = invoke_private($closing, 'normalizeCalculationMethod', ['standard']);
+expect_true(is_array($standardMethod) && isset($standardMethod['error']), 'Sales-minus-purchases method is rejected for closing');
 
 // --- Schema: completed-only unique key (prevents close→reopen→close→reopen collision) ---
 $setupSrc = file_get_contents($root . '/api/core/schema.php');

@@ -172,19 +172,62 @@ html[data-ui="modern"] #mainTabContent > .tab-pane > .table-responsive {
 }
 
 /* ---------- rows rendered by the managers (js/*-manager.js) ----------
-   Settled / unsettled invoices: a thin marker on the row's start edge
-   instead of tinting the whole row. */
+   Settled / unsettled invoices: the whole row (and its items row, which
+   carries .is-settled / .is-unsettled) is tinted, with a marker on the
+   start edge, so neighbouring invoices are easy to tell apart. The hover
+   overlay (--bs-table-bg-state) is kept next to the marker. */
 html[data-ui="modern"] .table > tbody > tr.status-settled,
 html[data-ui="modern"] .table > tbody > tr.status-unsettled { background-color: transparent !important; color: inherit; }
-html[data-ui="modern"] .table > tbody > tr.status-unsettled > td:first-child { box-shadow: inset -3px 0 0 var(--ui-warning); }
-html[data-ui="modern"] .table > tbody > tr.status-settled > td:first-child { box-shadow: inset -3px 0 0 var(--ui-success); }
-html[data-ui="modern"] .table > tbody > tr.purchase-order-warehouse-row > td:first-child { box-shadow: inset -3px 0 0 var(--ui-info); }
+html[data-ui="modern"] .table > tbody > tr.status-unsettled > td,
+html[data-ui="modern"] .table > tbody > tr.invoice-details-row.is-unsettled > td { --inv-tint: var(--ui-warning-soft); --inv-mark: var(--ui-warning); }
+html[data-ui="modern"] .table > tbody > tr.status-settled > td,
+html[data-ui="modern"] .table > tbody > tr.invoice-details-row.is-settled > td { --inv-tint: var(--ui-success-soft); --inv-mark: var(--ui-success); }
+html[data-ui="modern"] .table > tbody > tr:is(.status-settled, .status-unsettled) > td,
+html[data-ui="modern"] .table > tbody > tr.invoice-details-row:is(.is-settled, .is-unsettled) > td { background-color: var(--inv-tint) !important; color: inherit !important; }
+html[data-ui="modern"] .table > tbody > tr:is(.status-settled, .status-unsettled) > td:first-child,
+html[data-ui="modern"] .table > tbody > tr.invoice-details-row:is(.is-settled, .is-unsettled) > td { box-shadow: inset -3px 0 0 var(--inv-mark), inset 0 0 0 9999px var(--bs-table-bg-state, transparent); }
+html[data-ui="modern"] .table > tbody > tr.purchase-order-warehouse-row > td:first-child { box-shadow: inset -3px 0 0 var(--ui-info), inset 0 0 0 9999px var(--bs-table-bg-state, transparent); }
+/* A clear line where one invoice block ends (after its items row when shown). */
+html[data-ui="modern"] .table > tbody > tr.invoice-details-row:is(.is-settled, .is-unsettled) > td { border-bottom: 2px solid var(--ui-border-strong) !important; padding-bottom: .5rem !important; }
+html[data-ui="modern"] .table > tbody > tr.invoice-details-row:is(.is-settled, .is-unsettled) > td > div { background: var(--ui-surface) !important; border-radius: var(--ui-radius-sm, 6px); }
 
-/* Amounts keep their unit on the same line; tables scroll sideways instead. */
+/* Amounts keep their unit on the same line. On phones tables scroll sideways;
+   on desktop (>= 992px) text wraps instead so tables fit the page, and only
+   amounts / dates (.ui-fig) and button / status cells (.ui-ctl) stay on one
+   line — both tagged by js/table-sort.js. */
 html[data-ui="modern"] .table > tbody > tr > td { white-space: nowrap; }
 html[data-ui="modern"] .table > tbody > tr > td.text-wrap,
 html[data-ui="modern"] .table > tbody > tr > td[colspan],
 html[data-ui="modern"] .table > tbody > tr.invoice-details-row > td { white-space: normal; }
+@media (min-width: 992px) {
+    html[data-ui="modern"] .table > tbody > tr > td,
+    html[data-ui="modern"] .table > thead > tr > th { white-space: normal; }
+    html[data-ui="modern"] .table > tbody > tr > td:is(.ui-fig, .ui-ctl) { white-space: nowrap; min-width: 0; }
+    html[data-ui="modern"] .table > :not(caption) > * > * { padding-inline: .5rem; }
+    html[data-ui="modern"] .table-sm > :not(caption) > * > * { padding-inline: .4rem; }
+    html[data-ui="modern"] .table td .btn-group > .btn.btn-sm { padding-inline: .4rem; }
+    /* Price list matrix: «تومان» and the edit pencil drop under the number
+       when a size column is narrow. */
+    html[data-ui="modern"] #price-list-container td .price-amount { white-space: normal; }
+    html[data-ui="modern"] #price-list-container td > .d-flex,
+    html[data-ui="modern"] #price-list-container td > div > .d-flex { flex-wrap: wrap; row-gap: 2px; }
+    html[data-ui="modern"] #price-list-container .table > tbody > tr > td { min-width: 0; }
+    html[data-ui="modern"] #price-list-collections-table { font-size: .78rem; }
+    html[data-ui="modern"] #price-list-collections-table > :not(caption) > * > * { padding-inline: .3rem; font-size: inherit; }
+}
+/* Laptop widths: a slightly smaller table text keeps wide lists (invoices with
+   four amount columns) inside the page. */
+@media (min-width: 992px) and (max-width: 1439.98px) {
+    html[data-ui="modern"] .table > tbody > tr > td { font-size: .82rem; }
+    html[data-ui="modern"] .table > thead > tr > th { font-size: .74rem; }
+    html[data-ui="modern"] .table td .btn-group > .btn.btn-sm:not(.dropdown-toggle) { min-width: 27px; height: 27px; padding-inline: .25rem; }
+    /* The «سفارش کارخانه» badge keeps only its icon; the warehouse name is
+       already shown under the supplier. */
+    html[data-ui="modern"] .invoice-order-warehouse-badge { font-size: 0; padding-inline: .35rem; }
+    html[data-ui="modern"] .invoice-order-warehouse-badge > i { font-size: .8rem; margin: 0 !important; }
+    html[data-ui="modern"] #price-list-collections-table { font-size: .72rem; }
+    html[data-ui="modern"] #price-list-collections-table > :not(caption) > * > * { padding-inline: .2rem; }
+}
 
 /* Status buttons (delivery status and similar) look like soft pills. */
 html[data-ui="modern"] .delivery-status-dropdown > .btn { border: 0; border-radius: 999px; font-size: .76rem; padding: .22rem .65rem; font-weight: 500; }
@@ -534,7 +577,10 @@ html[data-ui="modern"] .btn-link:not(.text-dark):not(.text-body) { text-decorati
 /* Cells holding more than one line (a statement's «شرح» with its invoice
    items, check details, notes) wrap; single-value cells (amounts, dates) keep
    to one line. Tables inside a cell wrap too. */
-html[data-ui="modern"] .table > tbody > tr > td:has(> div, > table, > br, > ul, > p) { white-space: normal; min-width: 240px; }
+html[data-ui="modern"] .table > tbody > tr > td:not(.ui-ctl):has(> div, > table, > br, > ul, > p) { white-space: normal; min-width: 240px; }
+@media (min-width: 992px) {
+    html[data-ui="modern"] .table > tbody > tr > td:not(.ui-ctl):has(> div, > table, > br, > ul, > p) { min-width: 140px; }
+}
 html[data-ui="modern"] .table td .table > thead > tr > th { white-space: normal; }
 html[data-ui="modern"] .table td .table > tbody > tr > td { white-space: nowrap; min-width: 0; }
 html[data-ui="modern"] .table td .table > tbody > tr > td:first-child { white-space: normal; min-width: 140px; }
@@ -569,4 +615,68 @@ html[data-ui="modern"] #reports .ui-report-item:hover { border-color: var(--ui-b
 html[data-ui="modern"] #reports .ui-report-item.active { border-color: rgba(var(--ui-accent-rgb), .45); }
 @media (max-width: 991.98px) {
     html[data-ui="modern"] #reports .ui-report-list { flex-wrap: nowrap; overflow-x: auto; }
+}
+
+/* ---------- checks maturity chart + calendar ---------- */
+html[data-ui="modern"] #checks-maturity-panel .ui-panel-body { padding-top: .85rem; }
+html[data-ui="modern"] #checks-maturity-chart-wrap { position: relative; min-height: 220px; }
+html[data-ui="modern"] #checks-maturity-chart-wrap canvas { max-height: 280px; }
+.checks-maturity-cal {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+    direction: rtl;
+}
+.checks-maturity-cal-head {
+    text-align: center;
+    font-size: .72rem;
+    color: var(--ui-text-3, #6c757d);
+    font-weight: 600;
+    padding: .2rem 0;
+}
+.checks-maturity-cal-day {
+    min-height: 72px;
+    border: 1px solid var(--ui-border, #dee2e6);
+    border-radius: 8px;
+    padding: .35rem .4rem;
+    background: var(--ui-surface, #fff);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    cursor: default;
+    text-align: start;
+}
+.checks-maturity-cal-day.is-empty {
+    opacity: .35;
+    pointer-events: none;
+    background: transparent;
+}
+.checks-maturity-cal-day.has-checks {
+    cursor: pointer;
+}
+.checks-maturity-cal-day.has-checks:hover {
+    border-color: var(--ui-accent, #0d6efd);
+    background: var(--ui-surface-2, #f8f9fa);
+}
+.checks-maturity-cal-day.is-today {
+    border-color: var(--ui-accent, #0d6efd);
+    box-shadow: inset 0 0 0 1px var(--ui-accent, #0d6efd);
+}
+.checks-maturity-cal-day .day-num {
+    font-size: .8rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+.checks-maturity-cal-day .day-amt {
+    font-size: .68rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.checks-maturity-cal-day .day-amt.is-in { color: var(--bs-success, #198754); }
+.checks-maturity-cal-day .day-amt.is-out { color: var(--bs-danger, #dc3545); }
+@media (max-width: 575.98px) {
+    .checks-maturity-cal-day { min-height: 58px; padding: .25rem; }
+    .checks-maturity-cal-day .day-amt { font-size: .62rem; }
 }

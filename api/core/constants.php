@@ -17,7 +17,7 @@ define('APP_DEBUG', false);
 // Single source of truth for the app version. Bump on every deploy — it drives
 // asset cache-busting (scripts.php, index.php), AppConfig.VERSION and the
 // service-worker cache name (via the sw.js ?v= registration query).
-define('APP_VERSION', '2.7.5');
+define('APP_VERSION', '2.8.2');
 
 // ========== PAGINATION CONSTANTS ==========
 define('DEFAULT_PAGE_SIZE', 15);

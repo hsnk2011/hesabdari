@@ -72,6 +72,35 @@
         </div>
     </div>
 
+    <div class="card mb-3" id="checks-maturity-panel">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <strong><i class="bi bi-calendar3 me-1"></i> سررسید چک‌های باز</strong>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="btn-group btn-group-sm" id="checks-maturity-view-toggle" role="group" aria-label="نمای سررسید">
+                    <button type="button" class="btn btn-outline-primary active" data-maturity-view="chart">نمودار</button>
+                    <button type="button" class="btn btn-outline-primary" data-maturity-view="calendar">تقویم</button>
+                </div>
+                <div class="btn-group btn-group-sm" id="checks-maturity-month-nav" hidden>
+                    <button type="button" class="btn btn-outline-secondary" id="checks-maturity-prev-month" title="ماه قبل"><i class="bi bi-chevron-right"></i></button>
+                    <button type="button" class="btn btn-outline-secondary" id="checks-maturity-next-month" title="ماه بعد"><i class="bi bi-chevron-left"></i></button>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="checks-maturity-chart-wrap">
+                <canvas id="checks-maturity-chart" height="120" aria-label="نمودار سررسید شش ماه آینده"></canvas>
+                <p class="small text-muted mb-0 mt-2" id="checks-maturity-chart-hint">کلیک روی هر ماه → تقویم همان ماه و فیلتر جدول</p>
+            </div>
+            <div id="checks-maturity-calendar-wrap" hidden>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                    <strong id="checks-maturity-cal-label">—</strong>
+                    <span class="small text-muted">سبز: دریافتی · قرمز: پرداختی · کلیک روز = فیلتر جدول</span>
+                </div>
+                <div id="checks-maturity-calendar" class="checks-maturity-cal" role="grid" aria-label="تقویم سررسید ماه"></div>
+            </div>
+        </div>
+    </div>
+
     <div id="checks-filter-info" class="mb-2"></div>
     <div class="card border-0 bg-light mb-3">
         <div class="card-body py-3">

@@ -438,7 +438,7 @@ class ReturnInvoice extends BaseModel {
         // Validate each item
         foreach ($items as $idx => $item) {
             $productId = intval($item['productId'] ?? 0);
-            $dimensions = trim($item['dimensions'] ?? '');
+            $dimensions = normalize_dimensions($item['dimensions'] ?? '');
             $quantity = intval($item['quantity'] ?? 0);
             $unitPrice = floatval(str_replace(',', '', $item['unitPrice'] ?? 0));
 
@@ -544,7 +544,7 @@ class ReturnInvoice extends BaseModel {
         // Process each new item
         foreach ($newItems as $item) {
             $productId = intval($item['productId']);
-            $dimensions = trim($item['dimensions']);
+            $dimensions = normalize_dimensions($item['dimensions'] ?? '');
             $quantity = intval($item['quantity']);
             $unitPrice = floatval(str_replace(',', '', $item['unitPrice'] ?? 0));
             $selectedIdentifiers = $item['selected_identifiers'] ?? [];
@@ -1008,14 +1008,16 @@ class ReturnInvoice extends BaseModel {
         try {
             // Verify ownership
             $stmt = $this->conn->prepare(
-                "SELECT id FROM return_invoices 
+                "SELECT id, date FROM return_invoices
                  WHERE id = ? AND entity_id = ? AND type = ?"
             );
             $stmt->bind_param('iis', $id, $entity_id, $type);
             $stmt->execute();
-            if (empty(db_stmt_to_assoc_array($stmt))) {
+            $existing = db_stmt_to_assoc_array($stmt);
+            if (empty($existing)) {
                 throw new Exception('فاکتور مرجوعی یافت نشد یا متعلق به شما نیست.', 404);
             }
+            assert_transaction_date_editable($this->conn, $entity_id, $existing[0]['date']);
 
             $isSalesReturn = ($type === 'sales_return');
 

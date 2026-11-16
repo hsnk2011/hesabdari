@@ -346,34 +346,69 @@ class ReportModel {
     // *** END partner capital source helpers ***
 
     // *** START: New helper function to calculate inventory value at a specific date ***
+    /**
+     * SQL condition (aliases ii = inventory_items, pi = purchase_invoices): the piece was ours and in
+     * stock on a date. Binds two date parameters, both the date.
+     * A piece was out of stock if one of its sales (the current one or the one it came back from)
+     * happened by then and the customer had not returned it yet. Consignment sales are not final,
+     * so such a piece still counts as ours. Purchase returns are handled by the caller.
+     */
+    private static function inStockAtDateSql(): string {
+        return "(pi.is_consignment = 0 OR pi.is_consignment IS NULL)
+              AND ii.status IN ('in_stock', 'consignment_out', 'sold', 'returned')
+              AND (ii.status <> 'sold' OR ii.sales_invoice_item_id IS NOT NULL)
+              AND NOT EXISTS (
+                  SELECT 1 FROM sales_invoice_items sl
+                  JOIN sales_invoices sv ON sv.id = sl.invoiceId
+                  WHERE sl.id IN (ii.sales_invoice_item_id, ii.returned_from_sales_item_id)
+                    AND (sv.is_consignment = 0 OR sv.is_consignment IS NULL)
+                    AND sv.date <= ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM return_invoice_items rr
+                        JOIN return_invoices rv ON rv.id = rr.return_invoice_id
+                        WHERE rv.type = 'sales_return' AND rr.original_invoice_item_id = sl.id AND rv.date <= ?
+                    )
+              )";
+    }
+
     public function getInventoryValueAtDate($date, $entityId) {
         // Calculates the value based on items purchased ON or BEFORE the date,
         // and either still in stock OR sold AFTER the date.
-        $stmt = $this->conn->prepare("\n            SELECT COALESCE(SUM(pii.unitPrice), 0) as totalValue
+        $stmt = $this->conn->prepare("\n            SELECT COALESCE(SUM(pii.unitPrice * " . self::purchaseDiscountFactor('pi') . "), 0) as totalValue
             FROM inventory_items ii
             JOIN purchase_invoice_items pii ON ii.purchase_invoice_item_id = pii.id
             JOIN purchase_invoices pi ON pii.invoiceId = pi.id
-            LEFT JOIN sales_invoice_items sii ON ii.sales_invoice_item_id = sii.id
-            LEFT JOIN sales_invoices si ON sii.invoiceId = si.id
             WHERE pi.entity_id = ? AND pi.date <= ?
-              AND (
-                    ii.status IN ('in_stock', 'consignment_out')
-                    OR (ii.status = 'sold' AND si.date > ?)
-                    -- A returned item only sat in stock on the snapshot date if
-                    -- its return had already happened by then.
-                    OR (ii.status = 'returned' AND NOT EXISTS (
-                        SELECT 1 FROM return_invoice_items rii
-                        JOIN return_invoices ri ON rii.return_invoice_id = ri.id
-                        WHERE rii.original_invoice_item_id = ii.sales_invoice_item_id
-                          AND ri.date > ?
-                    ))
-                  )
-              AND (pi.is_consignment = 0 OR pi.is_consignment IS NULL)
+              AND " . self::inStockAtDateSql() . "
         ");
         $stmt->bind_param("isss", $entityId, $date, $date, $date);
         $stmt->execute();
         $result = db_stmt_to_assoc_array($stmt);
-        return $result[0]['totalValue'] ?? 0;
+        $value = (float)($result[0]['totalValue'] ?? 0);
+
+        // Pieces sent back to the supplier AFTER the date were still ours on that date.
+        // Counted per purchase line (quantity × price), not by the rug ids stored on the
+        // return line: returns saved before v2.6.0 carry wrong ids there.
+        $retStmt = $this->conn->prepare("
+            SELECT COALESCE(SUM(LEAST(r.qty, r.pieces) * r.unitPrice), 0) AS totalValue
+            FROM (
+                SELECT pii.id, MAX(pii.unitPrice * " . self::purchaseDiscountFactor('pi') . ") AS unitPrice, SUM(rii.quantity) AS qty,
+                       (SELECT COUNT(*) FROM inventory_items ii
+                        WHERE ii.purchase_invoice_item_id = pii.id AND ii.status = 'returned_to_supplier') AS pieces
+                FROM return_invoice_items rii
+                JOIN return_invoices ri ON ri.id = rii.return_invoice_id
+                JOIN purchase_invoice_items pii ON pii.id = rii.original_invoice_item_id
+                JOIN purchase_invoices pi ON pi.id = pii.invoiceId
+                WHERE ri.type = 'purchase_return' AND ri.entity_id = ? AND pi.entity_id = ?
+                  AND ri.date > ? AND pi.date <= ?
+                  AND (pi.is_consignment = 0 OR pi.is_consignment IS NULL)
+                GROUP BY pii.id
+            ) r
+        ");
+        $retStmt->bind_param("iiss", $entityId, $entityId, $date, $date);
+        $retStmt->execute();
+        $value += (float)(db_stmt_to_assoc_array($retStmt)[0]['totalValue'] ?? 0);
+        return $value;
     }
     // *** END: New helper function ***
 
@@ -449,7 +484,20 @@ class ReportModel {
             $adj = db_stmt_to_assoc_array($adjStmt)[0] ?? ['shrink' => 0, 'surplus' => 0];
             $result['stocktakingShrinkage'] = (float)$adj['shrink'];
             $result['stocktakingSurplus'] = (float)$adj['surplus'];
-            $result['totalCogs'] = (float)$result['totalCogs'] + $result['stocktakingShrinkage'] - $result['stocktakingSurplus'];
+            // Service lines on purchase invoices (freight, washing, …) never become stock pieces,
+            // so they are a cost of the period they were bought in (after the header discount).
+            $svcStmt = $this->conn->prepare(
+                "SELECT COALESCE(SUM(pii.quantity * pii.unitPrice * " . self::purchaseDiscountFactor('pi') . "), 0) AS svc
+                 FROM purchase_invoice_items pii
+                 JOIN purchase_invoices pi ON pi.id = pii.invoiceId
+                 WHERE pi.entity_id = ? AND (pi.is_consignment = 0 OR pi.is_consignment IS NULL)
+                   AND pii.is_service = 1 AND pi.date BETWEEN ? AND ?"
+            );
+            $svcStmt->bind_param('iss', $entityId, $startDate, $endDate);
+            $svcStmt->execute();
+            $result['purchaseServices'] = (float)(db_stmt_to_assoc_array($svcStmt)[0]['svc'] ?? 0);
+            $result['totalCogs'] = (float)$result['totalCogs'] + $result['stocktakingShrinkage'] - $result['stocktakingSurplus']
+                + $result['purchaseServices'];
             $result['grossProfit'] = $netSales - $result['totalCogs'];
         } 
         elseif ($calculationMethod === 'inventory') {
@@ -508,6 +556,7 @@ class ReportModel {
 
         $result['expenseBreakdown'] = $this->getExpenseBreakdown($startDate, $endDate, $entityId);
         $result['incomeBreakdown'] = $this->getIncomeBreakdown($startDate, $endDate, $entityId);
+        $result['salesByChannel'] = $this->getSalesByChannel($startDate, $endDate, $entityId, $calculationMethod === 'cogs');
         
         // NEW: Add analytics-style metrics for comprehensive reporting
         $salesData = $this->calculateTotalSales($this->conn, $startDate, $endDate, $entityId);
@@ -535,7 +584,23 @@ class ReportModel {
             (float)$result['netOperatingProfit']
         );
 
-        $capitalPack = $this->buildPartnerCapitalDetails($entityId, $startDate, $endDate, $result['partners']);
+        // Capital totals cover every partner of the entity, not only those with a share on the
+        // end date: a partner dropped in a restructuring may still have capital in the business.
+        $capitalPartners = $result['partners'];
+        $listed = array_flip(array_map('intval', array_column($capitalPartners, 'id')));
+        $allStmt = $this->conn->prepare(
+            "SELECT id, name FROM partners WHERE entity_id = ?
+             UNION SELECT a.partner_id, '' FROM accounts a WHERE a.entity_id = ? AND a.partner_id IS NOT NULL"
+        );
+        $allStmt->bind_param('ii', $entityId, $entityId);
+        $allStmt->execute();
+        foreach (db_stmt_to_assoc_array($allStmt) as $row) {
+            if (!isset($listed[(int)$row['id']])) {
+                $listed[(int)$row['id']] = true;
+                $capitalPartners[] = ['id' => (int)$row['id'], 'name' => $row['name'], 'netProfitShare' => 0];
+            }
+        }
+        $capitalPack = $this->buildPartnerCapitalDetails($entityId, $startDate, $endDate, $capitalPartners);
         $result['capitalSummary'] = $capitalPack['capitalSummary'];
         $result['capitalSummary']['closingCapital'] =
             (float)$result['capitalSummary']['openingCapital']
@@ -726,9 +791,16 @@ class ReportModel {
     /**
      * Unit cost expression for an inventory item linked to a sale (aliases: ii, pii, si).
      */
+    /** SQL factor (0..1] that spreads a purchase invoice's header discount over its lines ($alias = purchase_invoices). */
+    private static function purchaseDiscountFactor(string $alias): string {
+        return "COALESCE(1 - COALESCE({$alias}.discount, 0) / NULLIF({$alias}.totalAmount, 0), 1)";
+    }
+
     private function inventoryItemCostExpr() {
-        return "COALESCE(pii.unitPrice,
-                    (SELECT pii2.unitPrice FROM purchase_invoice_items pii2
+        // Header discounts lower every line of the purchase invoice in proportion.
+        return "COALESCE(pii.unitPrice * COALESCE((SELECT 1 - COALESCE(pix.discount, 0) / NULLIF(pix.totalAmount, 0)
+                                                  FROM purchase_invoices pix WHERE pix.id = pii.invoiceId), 1),
+                    (SELECT pii2.unitPrice * " . self::purchaseDiscountFactor('pi2') . " FROM purchase_invoice_items pii2
                      JOIN purchase_invoices pi2 ON pii2.invoiceId = pi2.id
                      WHERE pii2.productId = ii.product_id AND pii2.dimensions = ii.dimensions
                        AND pi2.entity_id = si.entity_id
@@ -802,6 +874,83 @@ class ReportModel {
         return (float)((db_stmt_to_assoc_array($stmt)[0]['returnCogs'] ?? 0));
     }
 
+    /**
+     * فروش خالص (و در روش بهای تمام‌شده، سود ناخالص) به تفکیک نوع فروش.
+     * Same sources as the report's totals; the sum of the rows equals net sales.
+     * Stocktaking adjustments and purchase service lines are not split (left to the total).
+     */
+    private function getSalesByChannel($startDate, $endDate, $entityId, bool $withCogs): array {
+        $rows = [];
+        foreach (sale_channel_labels() as $k => $label) {
+            $rows[$k] = ['key' => $k, 'label' => $label, 'grossSales' => 0.0, 'discounts' => 0.0, 'returns' => 0.0,
+                         'netSales' => 0.0, 'cogs' => null, 'grossProfit' => null, 'invoices' => 0];
+        }
+        $pick = function ($ch) use ($rows) { return isset($rows[$ch]) ? $ch : 'retail'; };
+        $q = function (string $sql) use ($entityId, $startDate, $endDate) {
+            $st = $this->conn->prepare($sql);
+            $st->bind_param('iss', $entityId, $startDate, $endDate);
+            $st->execute();
+            return db_stmt_to_assoc_array($st);
+        };
+        foreach ($q("SELECT sale_channel AS ch, COALESCE(SUM(totalAmount),0) AS g, COALESCE(SUM(discount),0) AS d, COUNT(*) AS n
+                     FROM sales_invoices WHERE entity_id = ? AND is_consignment = 0 AND date BETWEEN ? AND ?
+                     GROUP BY sale_channel") as $r) {
+            $k = $pick($r['ch']);
+            $rows[$k]['grossSales'] += (float)$r['g']; $rows[$k]['discounts'] += (float)$r['d']; $rows[$k]['invoices'] += (int)$r['n'];
+        }
+        foreach ($q("SELECT COALESCE(si.sale_channel, c.sale_channel, 'retail') AS ch, COALESCE(SUM(ri.totalAmount - ri.discount),0) AS amt
+                     FROM return_invoices ri
+                     LEFT JOIN sales_invoices si ON si.id = ri.original_invoice_id
+                     LEFT JOIN customers c ON c.id = ri.person_id
+                     WHERE ri.entity_id = ? AND ri.type = 'sales_return' AND ri.date BETWEEN ? AND ?
+                     GROUP BY ch") as $r) {
+            $rows[$pick($r['ch'])]['returns'] += (float)$r['amt'];
+        }
+        if ($withCogs) {
+            $cost = $this->inventoryItemCostExpr();
+            foreach ($rows as &$row) $row['cogs'] = 0.0;
+            unset($row);
+            foreach ($q("SELECT si.sale_channel AS ch, COALESCE(SUM({$cost}), 0) AS cogs
+                         FROM sales_invoice_items sii
+                         JOIN sales_invoices si ON sii.invoiceId = si.id
+                         JOIN inventory_items ii ON (ii.sales_invoice_item_id = sii.id OR ii.returned_from_sales_item_id = sii.id)
+                         LEFT JOIN purchase_invoice_items pii ON ii.purchase_invoice_item_id = pii.id
+                         WHERE si.entity_id = ? AND si.is_consignment = 0 AND si.date BETWEEN ? AND ?
+                         GROUP BY si.sale_channel") as $r) {
+                $rows[$pick($r['ch'])]['cogs'] += (float)$r['cogs'];
+            }
+            // Cost of returned goods goes back to the channel of the sale they came from.
+            foreach ($q("SELECT COALESCE(si.sale_channel, 'retail') AS ch, COALESCE(SUM({$cost}), 0) AS cogs
+                         FROM return_invoices ri
+                         JOIN return_invoice_items rii ON rii.return_invoice_id = ri.id
+                         JOIN inventory_items ii ON (
+                            (rii.inventory_item_ids IS NOT NULL AND rii.inventory_item_ids != ''
+                             AND FIND_IN_SET(ii.id, REPLACE(REPLACE(REPLACE(rii.inventory_item_ids, '[', ''), ']', ''), ' ', '')))
+                            OR ((rii.inventory_item_ids IS NULL OR rii.inventory_item_ids = '')
+                                AND rii.original_invoice_item_id IS NOT NULL
+                                AND (ii.sales_invoice_item_id = rii.original_invoice_item_id
+                                     OR ii.returned_from_sales_item_id = rii.original_invoice_item_id))
+                         )
+                         LEFT JOIN purchase_invoice_items pii ON ii.purchase_invoice_item_id = pii.id
+                         LEFT JOIN sales_invoice_items sii ON sii.id = COALESCE(NULLIF(ii.sales_invoice_item_id, 0),
+                                NULLIF(ii.returned_from_sales_item_id, 0), rii.original_invoice_item_id)
+                         LEFT JOIN sales_invoices si ON sii.invoiceId = si.id
+                         WHERE ri.entity_id = ? AND ri.type = 'sales_return' AND ri.date BETWEEN ? AND ?
+                         GROUP BY ch") as $r) {
+                $rows[$pick($r['ch'])]['cogs'] -= (float)$r['cogs'];
+            }
+        }
+        foreach ($rows as &$row) {
+            $row['netSales'] = $row['grossSales'] - $row['discounts'] - $row['returns'];
+            if ($row['cogs'] !== null) {
+                $row['grossProfit'] = $row['netSales'] - $row['cogs'];
+                $row['marginPercent'] = $row['netSales'] > 0 ? round($row['grossProfit'] / $row['netSales'] * 100, 1) : null;
+            }
+        }
+        unset($row);
+        return array_values($rows);
+    }
+
     private function getExpenseBreakdown($startDate, $endDate, $entityId) {
         $stmt = $this->conn->prepare("SELECT category, SUM(amount) as total FROM expenses WHERE entity_id = ? AND date BETWEEN ? AND ? GROUP BY category ORDER BY total DESC");
         $stmt->bind_param("iss", $entityId, $startDate, $endDate);
@@ -839,7 +988,7 @@ class ReportModel {
                    COALESCE(SUM(sii.unitPrice), 0) as salesValue
             FROM sales_invoice_items sii
             JOIN sales_invoices si ON sii.invoiceId = si.id
-            JOIN inventory_items ii ON ii.sales_invoice_item_id = sii.id
+            JOIN inventory_items ii ON (ii.sales_invoice_item_id = sii.id OR ii.returned_from_sales_item_id = sii.id)
             LEFT JOIN purchase_invoice_items pii ON ii.purchase_invoice_item_id = pii.id
             WHERE si.entity_id = ? AND si.is_consignment = 0 AND si.date BETWEEN ? AND ?
               AND COALESCE(pii.unitPrice, ii.cost_price, 0) = 0
@@ -848,6 +997,34 @@ class ReportModel {
         $zeroCost->execute();
         $zeroRow = db_stmt_to_assoc_array($zeroCost)[0] ?? ['cnt' => 0, 'salesValue' => 0];
 
+        // Rugs still in stock on the end date whose purchase line has no price: stock is undervalued.
+        $zeroStock = $this->conn->prepare("
+            SELECT COUNT(*) AS cnt
+            FROM inventory_items ii
+            JOIN purchase_invoice_items pii ON ii.purchase_invoice_item_id = pii.id
+            JOIN purchase_invoices pi ON pii.invoiceId = pi.id
+            WHERE pi.entity_id = ? AND pi.date <= ? AND pii.unitPrice = 0 AND COALESCE(pii.is_service, 0) = 0
+              AND " . self::inStockAtDateSql() . "
+        ");
+        $zeroStock->bind_param("isss", $entityId, $endDate, $endDate, $endDate);
+        $zeroStock->execute();
+        $zeroStockCount = (int)(db_stmt_to_assoc_array($zeroStock)[0]['cnt'] ?? 0);
+
+        // Purchase invoices to price: those behind the zero-cost rugs sold in the period.
+        $zeroInv = $this->conn->prepare("
+            SELECT DISTINCT pii.invoiceId AS id
+            FROM sales_invoice_items sii
+            JOIN sales_invoices si ON sii.invoiceId = si.id
+            JOIN inventory_items ii ON (ii.sales_invoice_item_id = sii.id OR ii.returned_from_sales_item_id = sii.id)
+            JOIN purchase_invoice_items pii ON ii.purchase_invoice_item_id = pii.id
+            WHERE si.entity_id = ? AND si.is_consignment = 0 AND si.date BETWEEN ? AND ? AND pii.unitPrice = 0
+            ORDER BY pii.invoiceId
+            LIMIT 30
+        ");
+        $zeroInv->bind_param("iss", $entityId, $startDate, $endDate);
+        $zeroInv->execute();
+        $zeroInvoiceIds = array_map('intval', array_column(db_stmt_to_assoc_array($zeroInv), 'id'));
+
         $returnCogs = $this->calculateSalesReturnCogs($startDate, $endDate, $entityId);
 
         return [
@@ -855,6 +1032,8 @@ class ReportModel {
             'unlinkedSaleValue' => (float)$unlinkedRow['salesValue'],
             'zeroCostSoldItems' => (int)$zeroRow['cnt'],
             'zeroCostSaleValue' => (float)$zeroRow['salesValue'],
+            'zeroCostStockItems' => $zeroStockCount,
+            'zeroCostPurchaseInvoices' => $zeroInvoiceIds,
             'salesReturnCogsReversed' => $returnCogs,
         ];
     }
@@ -1425,7 +1604,8 @@ class ReportModel {
                     SELECT SUM(IF(p.transaction_type = 'payment', p.amount, -p.amount))
                     FROM payments p
                     INNER JOIN purchase_invoices pi ON p.invoiceId = pi.id AND p.invoiceType = 'purchase'
-                    WHERE pi.supplierId = s.id AND pi.entity_id = ? AND pi.date <= ? AND pi.is_consignment = 0
+                    -- By payment date only: a prepayment on an invoice dated later is a credit on that date.
+                    WHERE pi.supplierId = s.id AND pi.entity_id = ? AND pi.is_consignment = 0
                       AND p.entity_id = ? AND p.date <= ?
                 ), 0) as totalPaid,
                 COALESCE((
@@ -1464,9 +1644,9 @@ class ReportModel {
         ";
         
         $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("isisisisisisisisi",
+        $stmt->bind_param("isiisisisisisisi",
             $entityId, $endDate,
-            $entityId, $endDate, $entityId, $endDate,
+            $entityId, $entityId, $endDate,
             $entityId, $endDate,
             $entityId, $endDate,
             $entityId, $endDate,
@@ -1546,7 +1726,8 @@ class ReportModel {
                     SELECT SUM(IF(p.transaction_type = 'receipt', p.amount, -p.amount))
                     FROM payments p
                     INNER JOIN sales_invoices si ON p.invoiceId = si.id AND p.invoiceType = 'sales'
-                    WHERE si.customerId = c.id AND si.entity_id = ? AND si.date <= ? AND si.is_consignment = 0
+                    -- By payment date only: a prepayment on an invoice dated later is a credit on that date.
+                    WHERE si.customerId = c.id AND si.entity_id = ? AND si.is_consignment = 0
                       AND p.entity_id = ? AND p.date <= ?
                 ), 0) as totalPaid,
                 COALESCE((
@@ -1585,9 +1766,9 @@ class ReportModel {
         ";
         
         $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("isisisisisisisisi",
+        $stmt->bind_param("isiisisisisisisi",
             $entityId, $endDate,
-            $entityId, $endDate, $entityId, $endDate,
+            $entityId, $entityId, $endDate,
             $entityId, $endDate,
             $entityId, $endDate,
             $entityId, $endDate,
@@ -2231,6 +2412,8 @@ class ReportModel {
             FROM payments p
             LEFT JOIN checks ch ON p.checkId = ch.id
             WHERE p.entity_id = ? AND p.date BETWEEN ? AND ?
+              -- Asset-document payments come from Asset::statementRows below (same rule as Asset::personNet).
+              AND IFNULL(p.invoiceType, '') NOT IN ('asset_purchase', 'asset_sale')
               AND (
                   (p.person_type = ? AND p.person_id = ?)
         ";
@@ -3509,13 +3692,13 @@ class ReportModel {
         $endDate = $data['endDate'] ?? date('Y-m-d');
 
         // Cash receipts from sales (cash + check cashed)
-        $stmt = $this->conn->prepare("SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.entity_id = ? AND p.transaction_type = 'receipt' AND p.type = 'cash' AND p.date BETWEEN ? AND ?");
+        $stmt = $this->conn->prepare("SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.entity_id = ? AND p.transaction_type = 'receipt' AND p.type = 'cash' AND p.account_id IS NOT NULL AND p.date BETWEEN ? AND ?");
         $stmt->bind_param("iss", $entity_id, $startDate, $endDate);
         $stmt->execute();
         $cashReceipts = floatval($stmt->get_result()->fetch_row()[0]);
 
         // Cash payments for purchases
-        $stmt2 = $this->conn->prepare("SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.entity_id = ? AND p.transaction_type = 'payment' AND p.type = 'cash' AND p.date BETWEEN ? AND ?");
+        $stmt2 = $this->conn->prepare("SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.entity_id = ? AND p.transaction_type = 'payment' AND p.type = 'cash' AND p.account_id IS NOT NULL AND p.date BETWEEN ? AND ?");
         $stmt2->bind_param("iss", $entity_id, $startDate, $endDate);
         $stmt2->execute();
         $cashPayments = floatval($stmt2->get_result()->fetch_row()[0]);
@@ -3582,7 +3765,7 @@ class ReportModel {
                 SUM(IF(p.transaction_type='receipt', p.amount, 0)) as inflow,
                 SUM(IF(p.transaction_type='payment', p.amount, 0)) as outflow
             FROM payments p 
-            WHERE p.entity_id = ? AND p.type = 'cash' AND p.date BETWEEN ? AND ?
+            WHERE p.entity_id = ? AND p.type = 'cash' AND p.account_id IS NOT NULL AND p.date BETWEEN ? AND ?
             GROUP BY DATE_FORMAT(p.date, '%Y-%m')
             ORDER BY month
         ");

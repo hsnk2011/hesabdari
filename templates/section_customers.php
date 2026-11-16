@@ -24,6 +24,15 @@
                     <option value="settled">تسویه‌شده</option>
                 </select>
             </div>
+            <div class="ui-filter">
+                <label class="ui-filter-label" for="customers-channel-filter"><i class="bi bi-shop"></i></label>
+                <select class="form-select" id="customers-channel-filter" title="نوع فروش">
+                    <option value="">همه انواع</option>
+                    <option value="retail">خانگی</option>
+                    <option value="trade">همکار/عمده</option>
+                    <option value="internal">داخلی</option>
+                </select>
+            </div>
             <div class="ui-toolbar-end">
                 <label class="ui-limit" for="customers-limit-select">نمایش
                     <select class="form-select pagination-limit-select form-select-sm" id="customers-limit-select" data-table="customers">
@@ -94,6 +103,19 @@
                         <div class="col-6">
                             <label for="customer-group" class="form-label">گروه مشتری</label>
                             <select class="form-select" id="customer-group"><option value="">— بدون گروه —</option></select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="customer-sale-channel" class="form-label">نوع فروش</label>
+                        <select class="form-select" id="customer-sale-channel">
+                            <option value="retail">خانگی</option>
+                            <option value="trade">همکار/عمده</option>
+                            <option value="internal">داخلی (درون‌گروهی — در آمار فروش نمی‌آید)</option>
+                        </select>
+                        <div class="form-text">فاکتورهای تازهٔ این مشتری با همین نوع ثبت می‌شوند و در فرم فاکتور قابل تغییرند.</div>
+                        <div class="form-check mt-1 customer-channel-apply-wrap" style="display:none;">
+                            <input class="form-check-input" type="checkbox" id="customer-channel-apply" checked>
+                            <label class="form-check-label small" for="customer-channel-apply">فاکتورهای قبلی این مشتری هم همین نوع شوند</label>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-success w-100">ذخیره</button>

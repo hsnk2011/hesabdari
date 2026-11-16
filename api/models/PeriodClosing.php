@@ -8,6 +8,9 @@ require_once __DIR__ . '/Account.php';
 require_once __DIR__ . '/ClosingSnapshotBuilder.php';
 
 class PeriodClosing {
+    /** A closing only accepts a full backup made within this window. */
+    const BACKUP_MAX_AGE_SECONDS = 3600;
+
     private $conn;
 
     public function __construct($db) {
@@ -99,7 +102,7 @@ class PeriodClosing {
 
         $periodStart = $validation['periodStart'];
         $periodEnd = $validation['periodEnd'];
-        $calculationMethod = $this->normalizeCalculationMethod($data['calculationMethod'] ?? 'standard');
+        $calculationMethod = $this->normalizeCalculationMethod($data['calculationMethod'] ?? '');
         if (is_array($calculationMethod)) {
             return $calculationMethod;
         }
@@ -123,6 +126,7 @@ class PeriodClosing {
         $resolved = $this->resolveNextPartnersConfig($currentPartners, $newPartnersConfig);
         $nextPartners = $resolved['partners'];
         $warnings = $this->buildPreviewWarnings($entityId, $periodEnd, $nextPartners, $resolved['dropped'] ?? []);
+        $warnings = array_merge($warnings, $this->buildDataQualityWarnings($plData['dataQuality'] ?? []));
 
         $wantPostProfit = !empty($data['postProfitToPartners']);
         if ($wantPostProfit && $netProfit != 0) {
@@ -138,7 +142,7 @@ class PeriodClosing {
             $periodStart,
             $periodEnd,
             $calculationMethod,
-            ['currentPartners' => $currentPartners]
+            ['currentPartners' => $currentPartners, 'plData' => $plData]
         );
         $warnings = array_merge($warnings, $snapshotBuilder->buildValidationWarnings($closingSnapshot));
 
@@ -175,7 +179,7 @@ class PeriodClosing {
             return ['error' => 'نوع بستن حساب نامعتبر است.', 'statusCode' => 400];
         }
 
-        $calculationMethod = $this->normalizeCalculationMethod($data['calculationMethod'] ?? 'standard');
+        $calculationMethod = $this->normalizeCalculationMethod($data['calculationMethod'] ?? '');
         if (is_array($calculationMethod)) {
             return $calculationMethod;
         }
@@ -195,7 +199,14 @@ class PeriodClosing {
         }
         if (empty($preview['canExecute'])) {
             $this->conn->rollback();
-            return ['error' => 'امکان بستن حساب به دلیل خطاهای پیش‌نمایش وجود ندارد.', 'statusCode' => 400];
+            $reasons = array_values(array_map(
+                fn($w) => (string)($w['message'] ?? ''),
+                array_filter($preview['warnings'] ?? [], fn($w) => ($w['level'] ?? '') === 'error')
+            ));
+            return [
+                'error' => 'امکان بستن حساب نیست: ' . implode(' | ', array_filter($reasons)),
+                'statusCode' => 400,
+            ];
         }
 
         $periodStart = $preview['periodStart'];
@@ -491,7 +502,7 @@ class PeriodClosing {
         }
 
         $dates = [];
-        foreach (['sales_invoices', 'purchase_invoices', 'payments', 'expenses'] as $table) {
+        foreach (['sales_invoices', 'purchase_invoices', 'payments', 'expenses', 'incomes', 'return_invoices'] as $table) {
             $stmt = $this->conn->prepare("SELECT MIN(date) as min_date FROM `{$table}` WHERE entity_id = ?");
             $stmt->bind_param('i', $entityId);
             $stmt->execute();
@@ -516,6 +527,10 @@ class PeriodClosing {
         $backupDir = realpath(__DIR__ . '/../../backups');
         if (!$path || !$backupDir || strpos($path, $backupDir) !== 0 || !is_file($path)) {
             return ['error' => 'فایل پشتیبان یافت نشد. لطفاً دوباره پشتیبان کامل ایجاد کنید.', 'statusCode' => 400];
+        }
+        // The backup must be the one just made for this closing, not any old file.
+        if (time() - (int)filemtime($path) > self::BACKUP_MAX_AGE_SECONDS) {
+            return ['error' => 'پشتیبان انتخاب‌شده قدیمی است. درست قبل از بستن حساب، دوباره «ایجاد پشتیبان کامل» را بزنید.', 'statusCode' => 400];
         }
         return ['filename' => $filename];
     }
@@ -553,6 +568,17 @@ class PeriodClosing {
         if ($lastClosed && $periodEnd <= $lastClosed) {
             return ['error' => "تاریخ پایان باید بعد از آخرین بستن حساب ({$lastClosed}) باشد.", 'statusCode' => 400];
         }
+        if (!$lastClosed) {
+            // First closing: documents before the start would be locked without ever being
+            // counted in any period, so the start may not skip past the first document.
+            $firstDoc = $this->getSuggestedPeriodStart($entityId);
+            if ($periodStart > $firstDoc) {
+                return [
+                    'error' => "در اولین بستن حساب، تاریخ شروع باید تاریخ اولین سند ({$firstDoc}) یا قبل از آن باشد تا هیچ سندی بیرون نماند.",
+                    'statusCode' => 400,
+                ];
+            }
+        }
         if ($lastClosed) {
             $expectedStart = date('Y-m-d', strtotime($lastClosed . ' +1 day'));
             if ($periodStart !== $expectedStart) {
@@ -579,15 +605,45 @@ class PeriodClosing {
     }
 
     private function normalizeCalculationMethod($method) {
-        $allowed = ['standard', 'cogs', 'inventory'];
+        // «فروش − خرید» (standard) is not offered here: it books unsold stock as a
+        // cost, so a year that ends with goods in the warehouse closes as a loss.
+        $allowed = ['cogs', 'inventory'];
         $method = is_string($method) ? trim($method) : '';
         if ($method === '') {
-            return 'standard';
+            return 'cogs';
         }
         if (!in_array($method, $allowed, true)) {
             return ['error' => 'روش محاسبه سود نامعتبر است.', 'statusCode' => 400];
         }
         return $method;
+    }
+
+    /** Gaps in the documents that make the profit wrong; the closing would lock them in. */
+    private function buildDataQualityWarnings(array $dq) {
+        $warnings = [];
+        $fmt = fn($v) => number_format((float)$v);
+        if ((int)($dq['zeroCostSoldItems'] ?? 0) > 0) {
+            $ids = array_map(fn($id) => '#' . (int)$id, $dq['zeroCostPurchaseInvoices'] ?? []);
+            $warnings[] = [
+                'level' => 'warning',
+                'message' => (int)$dq['zeroCostSoldItems'] . ' فرش فروخته‌شده بهای صفر دارند (فروش ' . $fmt($dq['zeroCostSaleValue'] ?? 0)
+                    . ' تومان)، پس سود این دوره بیشتر از واقع است. قیمت خرید را در این فاکتورهای خرید وارد کنید: ' . implode('، ', $ids),
+            ];
+        }
+        if ((int)($dq['zeroCostStockItems'] ?? 0) > 0) {
+            $warnings[] = [
+                'level' => 'warning',
+                'message' => (int)$dq['zeroCostStockItems'] . ' فرش در انبار قیمت خرید صفر دارند، پس ارزش انبار در تاریخ بستن کمتر از واقع است.',
+            ];
+        }
+        if ((int)($dq['unlinkedSaleLines'] ?? 0) > 0) {
+            $warnings[] = [
+                'level' => 'warning',
+                'message' => (int)$dq['unlinkedSaleLines'] . ' ردیف فروش به فرش انبار وصل نیست (' . $fmt($dq['unlinkedSaleValue'] ?? 0)
+                    . ' تومان) و بهای تمام‌شده‌اش صفر حساب شده است.',
+            ];
+        }
+        return $warnings;
     }
 
     private function buildProfitPostingWarnings($entityId, array $allocations) {
@@ -817,7 +873,7 @@ class PeriodClosing {
 
             if ($action === 'added' || (!$partnerId && $share > 0)) {
                 // manageTransaction=false: stay inside execute()'s outer transaction
-                $result = $partnerModel->save(['name' => $name, 'share' => $share], false);
+                $result = $partnerModel->save(['name' => $name, 'share' => $share, '_allowShareUpdateFromClosing' => true], false);
                 if (empty($result['success'])) {
                     throw new Exception($result['error'] ?? 'خطا در ایجاد شریک جدید هنگام بستن حساب.');
                 }
@@ -873,17 +929,18 @@ class PeriodClosing {
     }
 
     private function postProfitToPartnerAccounts($entityId, $periodEnd, $allocations, $closingId) {
-        // Post on the first day of the next period so the entry is outside the locked range
-        // and capital reports can exclude CLOSING:* descriptions separately.
-        $postDate = date('Y-m-d', strtotime($periodEnd . ' +1 day'));
+        // Dated ON the closing date: the profit belongs to the closed period, and the next
+        // period's opening capital (everything up to the day before it starts) includes it.
+        // No account_id: it is a capital entry in the partner's statement, not money in a
+        // bank or personal account, so no wallet balance or account ledger changes.
+        $postDate = $periodEnd;
         $accountStmt = $this->conn->prepare(
             "SELECT id FROM accounts WHERE entity_id = ? AND partner_id = ? LIMIT 1"
         );
         $insertStmt = $this->conn->prepare(
             "INSERT INTO payments (entity_id, type, transaction_type, person_type, person_id, account_id, amount, date, description)
-             VALUES (?, 'cash', ?, 'partner', ?, ?, ?, ?, ?)"
+             VALUES (?, 'cash', ?, 'partner', ?, NULL, ?, ?, ?)"
         );
-        $accountModel = new Account($this->conn);
         $postedCount = 0;
 
         foreach ($allocations as $alloc) {
@@ -902,20 +959,16 @@ class PeriodClosing {
                     400
                 );
             }
-            $accountId = (int)$accRows[0]['id'];
-
             // Capital claim for صورتحساب: receipt = profit (+), payment = loss (−).
-            // Wallet current_balance is NOT changed — closing is not a bank cash move.
             $transactionType = $amount > 0 ? 'receipt' : 'payment';
             $absAmount = abs($amount);
             $description = "CLOSING:{$closingId}|سهم سود بستن حساب تا {$periodEnd}";
 
             $insertStmt->bind_param(
-                'isiidss',
+                'isidss',
                 $entityId,
                 $transactionType,
                 $partnerId,
-                $accountId,
                 $absAmount,
                 $postDate,
                 $description
@@ -944,7 +997,6 @@ class PeriodClosing {
         $stmt->execute();
         $payments = db_stmt_to_assoc_array($stmt);
 
-        $accountModel = new Account($this->conn);
         $delStmt = $this->conn->prepare("DELETE FROM payments WHERE id = ? AND entity_id = ?");
 
         foreach ($payments as $payment) {

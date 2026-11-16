@@ -9,7 +9,7 @@
   const TAB_TITLES = { overview: 'نمای کلی', time: 'زمان و روند', products: 'محصولات', customers: 'مشتریان', collections: 'وصول و نقدینگی', profit: 'سودآوری', inventory: 'انبار', operations: 'عملیات و کیفیت داده', guide: 'راهنما' };
 
   const state = {
-    start: '', end: '', compare: 'prev', gran: 'auto', preset: 'this_year', tab: 'overview',
+    start: '', end: '', compare: 'prev', gran: 'auto', channel: '', preset: 'this_year', tab: 'overview',
     products: { collection: 0, ptype: '' },
     meta: null,
     data: {},          // section -> { sig, payload }
@@ -460,7 +460,7 @@
    *  Data loading
    * ================================================================ */
   function signature(section) {
-    const s = [state.start, state.end, state.compare, state.gran];
+    const s = [state.start, state.end, state.compare, state.gran, state.channel];
     if (section === 'products') s.push(state.products.collection, state.products.ptype);
     return s.join('|');
   }
@@ -484,6 +484,7 @@
     destroyCharts(section);
     el.innerHTML = skeleton();
     const params = { action: 'section', section, startDate: state.start, endDate: state.end, compare: state.compare, granularity: state.gran };
+    if (state.channel) params.channel = state.channel;
     if (section === 'products') { if (state.products.collection) params.collection = state.products.collection; if (state.products.ptype) params.ptype = state.products.ptype; }
     if (force) params.refresh = '1';
     try {
@@ -561,7 +562,35 @@
     if (!p || !cap) return;
     let t = `بازه: <b>${fa(p.label)}</b> (${fmtNum(p.days)} روز) · نمایش ${p.gran_label}`;
     if (p.compare !== 'none' && p.compare_range) t += ` · مقایسه با <b>${fa(p.compare_range)}</b>`;
+    t += ` · نوع فروش: <b>${CHANNEL_FILTER_LABELS[state.channel] || CHANNEL_FILTER_LABELS['']}</b>`;
+    if (state.channel && state.channel !== 'all') t += ' <span class="muted">(هزینه‌ها و چک‌ها تفکیک‌پذیر نیستند و کل آن‌ها حساب شده)</span>';
     cap.innerHTML = t;
+  }
+
+  const CHANNEL_FILTER_LABELS = { '': 'خانگی + همکار/عمده (بدون داخلی)', retail: 'فقط خانگی', trade: 'فقط همکار/عمده', internal: 'فقط داخلی', all: 'همه (با داخلی)' };
+
+  /** فروش دوره به تفکیک خانگی / همکار-عمده / داخلی (مستقل از فیلتر نوع فروش). */
+  function channelCard(rows, cmpLabel) {
+    const list = (rows || []).filter((r) => r.invoices > 0 || r.key !== 'internal');
+    const hasAny = list.some((r) => r.invoices > 0);
+    const shown = list.map((r) => Object.assign({}, r, {
+      label: r.key === 'internal' ? r.label + ' (جزو فروش نیست)' : r.label,
+      delta_txt: r.delta === null || r.delta === undefined ? '—' : (r.delta >= 0 ? '▲ ' : '▼ ') + fmtPct(Math.abs(r.delta)),
+    }));
+    return card({ title: 'فروش به تفکیک نوع', icon: 'shop', span: 12,
+      sub: 'نوع هر فاکتور در فرم فاکتور و پیش‌فرض آن روی مشتری تعیین می‌شود',
+      help: 'فروش خالص، سود ناخالص و حاشیه سود هر نوع فروش در همین بازه، مستقل از فیلتر «نوع فروش» بالای صفحه. سهم فقط از فروش خانگی + همکار/عمده حساب می‌شود؛ فاکتورهای «داخلی» (معامله‌های درون‌گروهی) جدا نشان داده می‌شوند.',
+      body: hasAny ? table('overview', 'فروش به تفکیک نوع', [
+        { key: 'label', label: 'نوع فروش', type: 'text' },
+        { key: 'net', label: 'فروش خالص', type: 'money' },
+        { key: 'share', label: 'سهم', type: 'share' },
+        { key: 'gross_profit', label: 'سود ناخالص', type: 'money' },
+        { key: 'margin', label: 'حاشیه سود', type: 'pct' },
+        { key: 'invoices', label: 'فاکتور', type: 'int' },
+        { key: 'customers', label: 'مشتری', type: 'int' },
+        { key: 'aov', label: 'میانگین فاکتور', type: 'money' },
+        ...(state.compare !== 'none' ? [{ key: 'delta_txt', label: `تغییر نسبت به ${cmpLabel}`, type: 'text' }] : []),
+      ], shown, { search: false, totals: false, sort: null }) : empty() });
   }
 
   const RENDER = {};
@@ -582,6 +611,8 @@
     const cm = f.current_month;
     const html = `
       <div class="sa-kpis">${d.kpis.map((k) => kpiTile(k, cmpLabel)).join('')}</div>
+
+      <div class="sa-grid" style="margin-top:12px">${channelCard(d.channels, cmpLabel)}</div>
 
       <div class="sa-grid" style="margin-top:12px">
         ${card({ title: 'روند فروش', icon: 'activity', span: 8,
@@ -1452,7 +1483,7 @@
     document.querySelectorAll('.sa-presets button').forEach((b) => b.classList.toggle('active', b.dataset.preset === state.preset));
   }
   function saveFilters() {
-    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ preset: state.preset, start: state.start, end: state.end, compare: state.compare, gran: state.gran })); } catch (e) {}
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify({ preset: state.preset, start: state.start, end: state.end, compare: state.compare, gran: state.gran, channel: state.channel })); } catch (e) {}
   }
   function filtersChanged() {
     saveFilters();
@@ -1493,6 +1524,7 @@
     document.querySelectorAll('.sa-presets button').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
     document.getElementById('sa-compare').addEventListener('change', (e) => { state.compare = e.target.value; filtersChanged(); });
     document.getElementById('sa-gran').addEventListener('change', (e) => { state.gran = e.target.value; filtersChanged(); });
+    document.getElementById('sa-channel').addEventListener('change', (e) => { state.channel = e.target.value; filtersChanged(); });
     ['sa-start', 'sa-end'].forEach((id) => {
       const el = document.getElementById(id);
       el.addEventListener('change', onDateInput);
@@ -1610,7 +1642,9 @@
     if (saved) {
       state.compare = ['prev', 'yoy', 'none'].includes(saved.compare) ? saved.compare : 'prev';
       state.gran = saved.gran || 'auto';
+      state.channel = ['', 'all', 'retail', 'trade', 'internal'].includes(saved.channel) ? saved.channel : '';
     }
+    document.getElementById('sa-channel').value = state.channel;
     document.getElementById('sa-compare').value = state.compare;
     document.getElementById('sa-gran').value = state.gran;
     initPickers();

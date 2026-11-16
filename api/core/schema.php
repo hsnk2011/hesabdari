@@ -235,6 +235,8 @@ function get_full_schema() {
                 '`linked_supplier_id` int(11) DEFAULT NULL',
                 '`entity_id` int(11) NOT NULL DEFAULT 1',
                 '`owner_user_id` int(11) DEFAULT NULL',
+                // نوع فروش پیش‌فرض این مشتری: retail = خانگی، trade = همکار/عمده، internal = داخلی (درون‌گروهی)
+                "`sale_channel` ENUM('retail','trade','internal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'retail'",
             ],
             'constraints' => [
                 'PRIMARY KEY (`id`)',
@@ -495,6 +497,8 @@ function get_full_schema() {
                 '`entity_id` int(11) NOT NULL DEFAULT 1',
                 '`source` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL',
                 '`salesperson_id` int(11) DEFAULT NULL',
+                // نوع فروش همین فاکتور (منبع آمار)؛ هنگام ثبت از مشتری پر می‌شود و قابل تغییر است
+                "`sale_channel` ENUM('retail','trade','internal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'retail'",
             ],
             'constraints' => [
                 'PRIMARY KEY (`id`)',
@@ -2594,6 +2598,48 @@ function apply_schema_patches($pdo, $db_name, &$success_messages, &$error_messag
     try {
         $pdo->exec("ALTER TABLE `customers` ADD UNIQUE KEY `uk_linked_supplier` (`linked_supplier_id`)");
     } catch (PDOException $e) { /* already exists */ }
+
+    // Normalize dimension strings (60X90 → 60x90) so PHP stock/serial matching stays consistent.
+    try {
+        $flag = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'dimensions_normalized_v1' LIMIT 1")->fetchColumn();
+        if ($flag !== '1' && function_exists('normalize_dimensions')) {
+            $tables = [
+                'inventory_items',
+                'purchase_invoice_items',
+                'sales_invoice_items',
+                'return_invoice_items',
+                'quotation_items',
+                'stocktaking_items',
+            ];
+            $updated = 0;
+            foreach ($tables as $table) {
+                $exists = $pdo->query("SHOW TABLES LIKE " . $pdo->quote($table))->fetchColumn();
+                if (!$exists) {
+                    continue;
+                }
+                $rows = $pdo->query("SELECT id, dimensions FROM `{$table}` WHERE dimensions IS NOT NULL AND dimensions <> ''")->fetchAll(PDO::FETCH_ASSOC);
+                $upd = $pdo->prepare("UPDATE `{$table}` SET dimensions = ? WHERE id = ? AND dimensions = ?");
+                foreach ($rows as $row) {
+                    $canon = normalize_dimensions($row['dimensions']);
+                    if ($canon === '' || $canon === $row['dimensions']) {
+                        continue;
+                    }
+                    try {
+                        $upd->execute([$canon, $row['id'], $row['dimensions']]);
+                        $updated += $upd->rowCount();
+                    } catch (PDOException $e) {
+                        // Unique (invoiceId,productId,dimensions) collision after normalize — leave as-is.
+                    }
+                }
+            }
+            $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('dimensions_normalized_v1', '1') ON DUPLICATE KEY UPDATE setting_value = '1'")->execute();
+            if ($updated > 0) {
+                $success_messages[] = "ابعاد {$updated} ردیف به شکل استاندارد (مثلاً 60x90) یکسان‌سازی شد.";
+            }
+        }
+    } catch (PDOException $e) {
+        $error_message .= "خطا در یکسان‌سازی ابعاد: " . $e->getMessage() . "<br>";
+    }
 }
 
 /**

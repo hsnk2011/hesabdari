@@ -14,6 +14,11 @@ const CheckManager = (function () {
     // Row data captured at selection time, so a check selected on another page/search
     // stays usable for ras-giri even when it is outside the (limited) checks cache.
     const selectedCheckData = new Map();
+    let maturityChart = null;
+    let maturityView = 'chart';
+    let maturityData = null;
+    let maturityCalJy = null;
+    let maturityCalJm = null;
 
     function renderTable(data) {
         const getCheckStatusText = (s, t) => {
@@ -952,6 +957,7 @@ ${timeline ? `<h3>مسیر چک</h3><table class="timeline"><thead><tr><th>تا�
         
         // Load checks summary
         await loadChecksSummary();
+        await loadChecksMaturity();
         
         UI.hideLoader();
     }
@@ -971,6 +977,207 @@ ${timeline ? `<h3>مسیر چک</h3><table class="timeline"><thead><tr><th>تا�
             $('#payable-past-due-count').text(`${summary.payable.pastDue.count} چک`);
             $('#payable-past-due-amount').text(UI.formatCurrency(summary.payable.pastDue.total));
         }
+    }
+
+    function formatMaturityCompact(amount) {
+        const n = Math.abs(Number(amount) || 0);
+        if (n >= 1e9) {
+            const v = n / 1e9;
+            return (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10).toString().replace(/\.0$/, '') + ' میلیارد';
+        }
+        if (n >= 1e6) {
+            const v = n / 1e6;
+            return (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10).toString().replace(/\.0$/, '') + ' م';
+        }
+        if (n >= 1e3) return Math.round(n / 1e3) + ' هزار';
+        return UI.formatCurrency(n);
+    }
+
+    function setMaturityView(view) {
+        maturityView = view === 'calendar' ? 'calendar' : 'chart';
+        $('#checks-maturity-view-toggle [data-maturity-view]').removeClass('active');
+        $(`#checks-maturity-view-toggle [data-maturity-view="${maturityView}"]`).addClass('active');
+        const showCal = maturityView === 'calendar';
+        $('#checks-maturity-chart-wrap').prop('hidden', showCal);
+        $('#checks-maturity-calendar-wrap').prop('hidden', !showCal);
+        $('#checks-maturity-month-nav').prop('hidden', !showCal);
+    }
+
+    function shiftMaturityMonth(delta) {
+        if (maturityCalJy == null || maturityCalJm == null) return;
+        let y = maturityCalJy;
+        let m = maturityCalJm + delta;
+        while (m > 12) { m -= 12; y++; }
+        while (m < 1) { m += 12; y--; }
+        maturityCalJy = y;
+        maturityCalJm = m;
+        loadChecksMaturity({ quiet: true });
+    }
+
+    async function loadChecksMaturity(options = {}) {
+        if (!$('#checks-maturity-panel').length) return;
+        const payload = {};
+        if (maturityCalJy != null && maturityCalJm != null) {
+            payload.jy = maturityCalJy;
+            payload.jm = maturityCalJm;
+        }
+        const data = await Api.call('get_checks_maturity', payload);
+        if (!data || data.error || !data.success) {
+            if (!options.quiet) {
+                // Keep panel usable even if empty/error
+            }
+            return;
+        }
+        maturityData = data;
+        if (data.calendar) {
+            maturityCalJy = data.calendar.jy;
+            maturityCalJm = data.calendar.jm;
+        }
+        renderMaturityChart(data);
+        renderMaturityCalendar(data);
+        setMaturityView(maturityView);
+    }
+
+    function renderMaturityChart(data) {
+        const canvas = document.getElementById('checks-maturity-chart');
+        if (!canvas || typeof Chart === 'undefined') return;
+        const months = data.months || [];
+        if (maturityChart) {
+            maturityChart.destroy();
+            maturityChart = null;
+        }
+        const labels = months.map(m => m.label);
+        const received = months.map(m => Number(m.received?.amount) || 0);
+        const payable = months.map(m => Number(m.payable?.amount) || 0);
+        maturityChart = new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'دریافتی نزد ما',
+                        data: received,
+                        backgroundColor: 'rgba(25, 135, 84, 0.75)',
+                        borderColor: '#198754',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'پرداختنی باز',
+                        data: payable,
+                        backgroundColor: 'rgba(220, 53, 69, 0.75)',
+                        borderColor: '#dc3545',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                onClick: (evt, elements) => {
+                    if (!elements || !elements.length) return;
+                    const idx = elements[0].index;
+                    const month = months[idx];
+                    if (!month) return;
+                    maturityCalJy = month.jy;
+                    maturityCalJm = month.jm;
+                    setMaturityView('calendar');
+                    filterChecksByDueRange(month.start, month.end);
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { font: { family: 'Vazirmatn', size: 11 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const month = months[ctx.dataIndex] || {};
+                                const key = ctx.datasetIndex === 0 ? 'received' : 'payable';
+                                const count = month[key]?.count || 0;
+                                return `${ctx.dataset.label}: ${UI.formatCurrency(ctx.raw)} (${count} فقره)`;
+                            },
+                            footer: (items) => {
+                                const month = months[items[0]?.dataIndex] || {};
+                                const net = Number(month.net != null ? month.net : ((month.received?.amount || 0) - (month.payable?.amount || 0)));
+                                return `خالص: ${UI.formatCurrency(net)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { font: { family: 'Vazirmatn', size: 11 } }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: (value) => {
+                                if (value >= 1e9) return (value / 1e9) + ' میلیارد';
+                                if (value >= 1e6) return (value / 1e6) + ' م';
+                                if (value >= 1e3) return (value / 1e3) + ' هزار';
+                                return value;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderMaturityCalendar(data) {
+        const cal = data.calendar || {};
+        const $grid = $('#checks-maturity-calendar').empty();
+        $('#checks-maturity-cal-label').text(cal.label || '—');
+        const weekdays = cal.weekdays || ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'];
+        weekdays.forEach(w => {
+            $grid.append(`<div class="checks-maturity-cal-head">${UI.escapeHtml(w)}</div>`);
+        });
+
+        const dayMap = {};
+        (cal.days || []).forEach(d => { dayMap[d.jd] = d; });
+        const todayIso = data.today || localIsoDate();
+        const weekdayStart = Number(cal.weekdayStart) || 0;
+        const length = Number(cal.length) || 30;
+
+        for (let i = 0; i < weekdayStart; i++) {
+            $grid.append('<div class="checks-maturity-cal-day is-empty" aria-hidden="true"></div>');
+        }
+
+        for (let jd = 1; jd <= length; jd++) {
+            const day = dayMap[jd];
+            const dateIso = day?.date || '';
+            const isToday = dateIso === todayIso;
+            const hasChecks = !!(day && ((day.received?.count || 0) + (day.payable?.count || 0) > 0));
+            const classes = ['checks-maturity-cal-day'];
+            if (isToday) classes.push('is-today');
+            if (hasChecks) classes.push('has-checks');
+            let body = `<span class="day-num">${jd}</span>`;
+            if (day?.received?.count) {
+                body += `<span class="day-amt is-in" title="دریافتی">+${formatMaturityCompact(day.received.amount)} (${day.received.count})</span>`;
+            }
+            if (day?.payable?.count) {
+                body += `<span class="day-amt is-out" title="پرداختی">−${formatMaturityCompact(day.payable.amount)} (${day.payable.count})</span>`;
+            }
+            const attrs = hasChecks
+                ? ` role="button" tabindex="0" data-due-date="${UI.escapeHtml(dateIso)}" title="فیلتر چک‌های این روز"`
+                : '';
+            $grid.append(`<div class="${classes.join(' ')}"${attrs}>${body}</div>`);
+        }
+    }
+
+    function filterChecksByDueRange(fromIso, toIso) {
+        if (!fromIso || !toIso) return;
+        applyFilterControls({
+            filterCheckType: '',
+            filterStatus: 'open',
+            filterDue: '',
+            filterRelated: ''
+        });
+        $('#check-filter-due-from').val(UI.gregorianToPersian(fromIso));
+        $('#check-filter-due-to').val(UI.gregorianToPersian(toIso));
+        state.currentPage = 1;
+        load();
     }
 
     async function handleDelete(id) {
@@ -1284,6 +1491,25 @@ ${timeline ? `<h3>مسیر چک</h3><table class="timeline"><thead><tr><th>تا�
                 || (App.getCache().checks || []).find(c => String(c.id) === String(checkId))?.status;
             const preferType = status === 'endorsed' ? 'endorse_check' : 'check';
             await openPaymentForCheck(checkId, preferType);
+        });
+
+        $('#checks-maturity-view-toggle').on('click', '[data-maturity-view]', function () {
+            setMaturityView($(this).data('maturity-view'));
+        });
+        $('#checks-maturity-prev-month').on('click', () => shiftMaturityMonth(-1));
+        $('#checks-maturity-next-month').on('click', () => shiftMaturityMonth(1));
+        $('#checks-maturity-calendar').on('click', '.checks-maturity-cal-day.has-checks', function () {
+            const due = $(this).attr('data-due-date');
+            if (due) filterChecksByDueRange(due, due);
+        });
+        $('#checks-maturity-calendar').on('keydown', '.checks-maturity-cal-day.has-checks', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                $(this).trigger('click');
+            }
+        });
+        $(document).on('ui-theme-change.checksMaturity', () => {
+            if (maturityData) renderMaturityChart(maturityData);
         });
     }
 

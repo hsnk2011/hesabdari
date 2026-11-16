@@ -114,6 +114,13 @@ try {
     $rows = Asset::statementRows($conn, $entityId, 'customer', $customerId, '2031-01-01', '2031-12-31');
     $sum = array_sum(array_column($rows, 'signed'));
     expect_true(count($rows) === 2 && abs($sum) < 0.01, 'customer statement: sale document and receipt net to zero');
+    // The full person statement must list the receipt once (it used to come from both
+    // the generic payments query and Asset::statementRows).
+    $st = (new ReportModel($conn))->getPersonStatement(['personType' => 'customer', 'personId' => $customerId,
+        'startDate' => '2031-01-01', 'endDate' => '2031-12-31', 'entityId' => $entityId]);
+    $net = 0.0;
+    foreach ($st['transactions'] ?? [] as $t) { $net += (float)($t['debit'] ?? 0) - (float)($t['credit'] ?? 0); }
+    expect_true(abs($net) < 0.01, 'person statement: sale and its receipt net to zero (' . $net . ')');
 
     // 8) delete the sale: payment removed, account restored, gain gone
     $ds = $model->deleteDocument((int)$s1['id']);

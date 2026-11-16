@@ -1566,5 +1566,203 @@ class Check extends BaseModel {
         }
         return ['success' => true, 'checks' => $history['checks']];
     }
+
+    /**
+     * Open-check maturity for upcoming Jalali months + day grid for one month.
+     * Only received/in_hand and payable/payable.
+     *
+     * @param array $input Optional keys: jy, jm (calendar month; default = current Jalali month)
+     */
+    public function getMaturity($input = []) {
+        $entity_id = $_SESSION['current_entity_id'] ?? null;
+        if (!$entity_id) {
+            return ['error' => 'نشست کاربر نامعتبر است.', 'statusCode' => 401];
+        }
+
+        $today = date('Y-m-d');
+        $todayParts = explode('/', gregorian_to_jalali($today));
+        $curJy = (int)($todayParts[0] ?? 0);
+        $curJm = (int)($todayParts[1] ?? 0);
+        $curJd = (int)($todayParts[2] ?? 0);
+
+        $calJy = isset($input['jy']) && is_numeric($input['jy']) ? (int)$input['jy'] : $curJy;
+        $calJm = isset($input['jm']) && is_numeric($input['jm']) ? (int)$input['jm'] : $curJm;
+        if ($calJm < 1 || $calJm > 12 || $calJy < 1200 || $calJy > 1600) {
+            $calJy = $curJy;
+            $calJm = $curJm;
+        }
+
+        $months = [];
+        for ($i = 0; $i < 6; $i++) {
+            $y = $curJy;
+            $m = $curJm + $i;
+            while ($m > 12) {
+                $m -= 12;
+                $y++;
+            }
+            $len = $this->jalaliMonthLength($y, $m);
+            $start = jalali_to_gregorian($y, $m, 1);
+            $end = jalali_to_gregorian($y, $m, $len);
+            if (!$start || !$end) {
+                continue;
+            }
+            $months[] = [
+                'jy' => $y,
+                'jm' => $m,
+                'label' => $this->jalaliMonthLabel($y, $m),
+                'start' => $start,
+                'end' => $end,
+                'received' => ['amount' => 0.0, 'count' => 0],
+                'payable' => ['amount' => 0.0, 'count' => 0],
+            ];
+        }
+
+        $rangeStart = $months[0]['start'] ?? $today;
+        $rangeEnd = $months[count($months) - 1]['end'] ?? $today;
+
+        $calLen = $this->jalaliMonthLength($calJy, $calJm);
+        $calStart = jalali_to_gregorian($calJy, $calJm, 1);
+        $calEnd = jalali_to_gregorian($calJy, $calJm, $calLen);
+        if (!$calStart || !$calEnd) {
+            $calStart = $rangeStart;
+            $calEnd = $rangeEnd;
+            $calJy = $curJy;
+            $calJm = $curJm;
+            $calLen = $this->jalaliMonthLength($calJy, $calJm);
+        }
+
+        $fetchStart = min($rangeStart, $calStart);
+        $fetchEnd = max($rangeEnd, $calEnd);
+
+        $stmt = $this->conn->prepare(
+            "SELECT id, type, status, checkNumber, amount, dueDate, bankName, issuerName
+             FROM checks
+             WHERE entity_id = ?
+               AND dueDate IS NOT NULL
+               AND dueDate >= ? AND dueDate <= ?
+               AND ((type = 'received' AND status = 'in_hand') OR (type = 'payable' AND status = 'payable'))
+             ORDER BY dueDate ASC, id ASC"
+        );
+        if (!$stmt) {
+            return ['error' => 'خطا در آماده‌سازی گزارش سررسید چک.', 'statusCode' => 500];
+        }
+        $stmt->bind_param('iss', $entity_id, $fetchStart, $fetchEnd);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+        $stmt->close();
+
+        $dayMap = [];
+        foreach ($rows as $row) {
+            $due = substr((string)$row['dueDate'], 0, 10);
+            $amount = (float)$row['amount'];
+            $typeKey = ($row['type'] === 'payable') ? 'payable' : 'received';
+
+            $jParts = explode('/', gregorian_to_jalali($due));
+            $jy = (int)($jParts[0] ?? 0);
+            $jm = (int)($jParts[1] ?? 0);
+            $jd = (int)($jParts[2] ?? 0);
+
+            foreach ($months as &$month) {
+                if ($month['jy'] === $jy && $month['jm'] === $jm) {
+                    $month[$typeKey]['amount'] += $amount;
+                    $month[$typeKey]['count']++;
+                    break;
+                }
+            }
+            unset($month);
+
+            if ($jy === $calJy && $jm === $calJm) {
+                if (!isset($dayMap[$due])) {
+                    $dayMap[$due] = [
+                        'date' => $due,
+                        'jd' => $jd,
+                        'received' => ['amount' => 0.0, 'count' => 0],
+                        'payable' => ['amount' => 0.0, 'count' => 0],
+                        'items' => [],
+                    ];
+                }
+                $dayMap[$due][$typeKey]['amount'] += $amount;
+                $dayMap[$due][$typeKey]['count']++;
+                $dayMap[$due]['items'][] = [
+                    'id' => (int)$row['id'],
+                    'type' => $row['type'],
+                    'checkNumber' => $row['checkNumber'],
+                    'amount' => $amount,
+                    'bankName' => $row['bankName'] ?? '',
+                    'issuerName' => $row['issuerName'] ?? '',
+                ];
+            }
+        }
+
+        foreach ($months as &$month) {
+            $month['received']['amount'] = round($month['received']['amount']);
+            $month['payable']['amount'] = round($month['payable']['amount']);
+            $month['net'] = round($month['received']['amount'] - $month['payable']['amount']);
+        }
+        unset($month);
+
+        $days = array_values($dayMap);
+        usort($days, function ($a, $b) {
+            return strcmp($a['date'], $b['date']);
+        });
+        foreach ($days as &$day) {
+            $day['received']['amount'] = round($day['received']['amount']);
+            $day['payable']['amount'] = round($day['payable']['amount']);
+        }
+        unset($day);
+
+        $weekdayStart = 0;
+        if ($calStart) {
+            $w = (int)date('w', strtotime($calStart));
+            $weekdayStart = ($w + 1) % 7; // 0=شنبه … 6=جمعه
+        }
+
+        return [
+            'success' => true,
+            'today' => $today,
+            'todayJalali' => ['jy' => $curJy, 'jm' => $curJm, 'jd' => $curJd],
+            'months' => $months,
+            'calendar' => [
+                'jy' => $calJy,
+                'jm' => $calJm,
+                'label' => $this->jalaliMonthLabel($calJy, $calJm),
+                'start' => $calStart,
+                'end' => $calEnd,
+                'length' => $calLen,
+                'weekdayStart' => $weekdayStart,
+                'weekdays' => ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'],
+                'days' => $days,
+            ],
+        ];
+    }
+
+    private function jalaliMonthNames() {
+        return [
+            1 => 'فروردین', 2 => 'اردیبهشت', 3 => 'خرداد', 4 => 'تیر',
+            5 => 'مرداد', 6 => 'شهریور', 7 => 'مهر', 8 => 'آبان',
+            9 => 'آذر', 10 => 'دی', 11 => 'بهمن', 12 => 'اسفند',
+        ];
+    }
+
+    private function jalaliMonthLabel($jy, $jm) {
+        $names = $this->jalaliMonthNames();
+        return ($names[(int)$jm] ?? '') . ' ' . (int)$jy;
+    }
+
+    private function jalaliMonthLength($jy, $jm) {
+        $jm = (int)$jm;
+        if ($jm >= 1 && $jm <= 6) {
+            return 31;
+        }
+        if ($jm >= 7 && $jm <= 11) {
+            return 30;
+        }
+        $probe = jalali_to_gregorian((int)$jy, 12, 30);
+        if ($probe && gregorian_to_jalali($probe) === sprintf('%04d/12/30', (int)$jy)) {
+            return 30;
+        }
+        return 29;
+    }
 }
 ?>

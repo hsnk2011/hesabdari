@@ -61,6 +61,14 @@ const PriceListManager = (function () {
         return (items || []).find(i => Number(i.id) === Number(id));
     }
 
+    /** An amount whose unit may drop under the number when the column is narrow. */
+    function priceHtml(n) {
+        const text = UI.formatCurrency(n);
+        const cut = text.lastIndexOf(' ');
+        if (cut < 0) return text;
+        return `<span class="price-amount"><span class="text-nowrap">${text.slice(0, cut)}</span> <span class="price-unit">${text.slice(cut + 1)}</span></span>`;
+    }
+
     function editButtonHtml(extraClass, attrs, title) {
         return `<button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 no-print ${extraClass}" ${attrs} title="${title}" aria-label="${title}">
             <i class="bi bi-pencil"></i>
@@ -70,7 +78,7 @@ const PriceListManager = (function () {
     function renderMeterPriceCell(item, type) {
         const priceDisplay = item.has_no_price
             ? '<span class="text-danger fw-bold">تعیین نشده</span>'
-            : UI.formatCurrency(item.price_per_meter);
+            : priceHtml(item.price_per_meter);
 
         if (!canEditPrices()) {
             return `<td>${priceDisplay}</td>`;
@@ -89,7 +97,7 @@ const PriceListManager = (function () {
         if (!canEditPrices()) return '';
         const partner = Number(item.partner_price_per_meter);
         const text = partner > 0
-            ? UI.formatCurrency(partner)
+            ? priceHtml(partner)
             : '<span class="text-muted" title="قیمت فروش منهای درصد همکاری لینک">٪ لینک</span>';
         return `<td class="partner-price-cell align-middle">
             <div class="d-flex align-items-center justify-content-center gap-1">
@@ -264,7 +272,7 @@ const PriceListManager = (function () {
                 const noPriceClass = collection.has_no_price ? 'table-danger' : '';
                 const dimCells = collection_dimensions.map(dim => {
                     const hasPrice = collection.calculated_prices[dim] !== null && !collection.has_no_price;
-                    const priceText = hasPrice ? UI.formatCurrency(collection.calculated_prices[dim]) : '-';
+                    const priceText = hasPrice ? priceHtml(collection.calculated_prices[dim]) : '-';
                     if (!hasPrice || !canEditPrices()) {
                         return `<td>${priceText}</td>`;
                     }
@@ -319,7 +327,7 @@ const PriceListManager = (function () {
                 const colProducts = sortedProducts.slice(start, end);
                 if (colProducts.length === 0) continue;
 
-                finalHtml += '<div class="col-12 col-md-6 col-lg-4">';
+                finalHtml += '<div class="col-12 col-lg-6 price-list-products-col">';
                 finalHtml += `<div class="table-responsive"><table class="table table-bordered table-hover text-center price-list-products-table">
                     <thead class="table-light">
                         <tr>
@@ -347,7 +355,7 @@ const PriceListManager = (function () {
                     const pricesHtml = dimsSorted.length
                         ? dimsSorted.map(d => {
                             const priceText = !product.has_no_price && product.calculated_prices[d] != null
-                                ? UI.formatCurrency(product.calculated_prices[d])
+                                ? priceHtml(product.calculated_prices[d])
                                 : '-';
                             if (priceText === '-' || !canEditPrices()) {
                                 return `<div>${priceText}</div>`;

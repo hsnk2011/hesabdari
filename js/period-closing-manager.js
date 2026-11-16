@@ -108,7 +108,7 @@ const PeriodClosingManager = (function () {
         $('#close-wizard-next-btn').show().text('پیش‌نمایش و ادامه');
         $('#close-execute-btn').hide();
         $('#close-type').val('annual');
-        $('#close-calc-method').val('standard');
+        $('#close-calc-method').val('cogs');
         $('#close-title').val('');
         $('#close-notes').val('');
         $('#close-post-profit').prop('checked', false);
@@ -276,8 +276,8 @@ const PeriodClosingManager = (function () {
                         <div class="col-md-4"><h6 class="text-primary">سرمایه</h6><ul class="list-unstyled small">
                             <li>سرمایه شرکا (واریز−برداشت): ${UI.formatCurrency(cap.partnerCapital != null ? cap.partnerCapital : cap.closingCapital)}</li>
                             <li>سود/زیان این دوره (تحلیلی): ${UI.formatCurrency(cap.netProfit)}</li>
-                            <li>اندوخته/تعدیل (باقیمانده تراز): ${UI.formatCurrency(equity.unallocatedEarnings != null ? equity.unallocatedEarnings : (cap.unallocatedEarnings || 0))}</li>
-                            <li class="fw-bold border-top pt-1">جمع سرمایه (خالص دارایی): ${UI.formatCurrency(equity.total)}</li>
+                            <li>سود انباشته و مانده‌های اول دوره (تقسیم‌نشده): ${UI.formatCurrency(equity.unallocatedEarnings != null ? equity.unallocatedEarnings : (cap.unallocatedEarnings || 0))}</li>
+                            <li class="fw-bold border-top pt-1">جمع سرمایه: ${UI.formatCurrency(equity.total)}</li>
                         </ul>
                         ${(bs.partnersMemo && (bs.partnersMemo.receivables || bs.partnersMemo.payables)) ? `<p class="small text-muted mt-2 mb-0">یادداشت شرکا (خارج از معادله): بدهکار ${UI.formatCurrency(bs.partnersMemo.receivables)} | بستانکار ${UI.formatCurrency(bs.partnersMemo.payables)}</p>` : ''}
                         </div>

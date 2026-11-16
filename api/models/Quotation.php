@@ -240,7 +240,7 @@ class Quotation extends BaseModel {
                 $productId = intval($item['productId']);
                 $quantity = floatval($item['quantity']);
                 $unitPrice = floatval(str_replace(',', '', $item['unitPrice']));
-                $dimensions = $item['dimensions'] ?? '';
+                $dimensions = normalize_dimensions($item['dimensions'] ?? '');
                 
                 $stmt->bind_param('iidds', $id, $productId, $quantity, $unitPrice, $dimensions);
                 $stmt->execute();

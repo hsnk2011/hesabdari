@@ -6,6 +6,10 @@ const PersonStatementPrint = (function () {
     const esc = (s) => UI.escapeHtml(s == null ? '' : String(s));
     // Persian digits with a plain comma separator (the default Arabic thousands mark is tiny and raised in print).
     const fmt = (n) => UI.formatNumber(n).replace(/[٬،]/g, ',');
+    // Dates, codes, sizes and phones in Persian digits too, so a row never mixes two digit styles.
+    const fa = (s) => String(s == null ? '' : s).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    const escFa = (s) => fa(esc(s));
+    const faDims = (d) => fa(String(d || '').trim().replace(/\s*[x×*]\s*/gi, '×'));
 
     const ONES = ['', 'یک', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه', 'ده', 'یازده', 'دوازده', 'سیزده', 'چهارده', 'پانزده', 'شانزده', 'هفده', 'هجده', 'نوزده'];
     const TENS = ['', '', 'بیست', 'سی', 'چهل', 'پنجاه', 'شصت', 'هفتاد', 'هشتاد', 'نود'];
@@ -130,6 +134,12 @@ const PersonStatementPrint = (function () {
         return debtor ? '<span class="chip deb">بد</span>' : '<span class="chip cre">بس</span>';
     }
 
+    function itemArea(item) {
+        if (item.is_service == 1 || !item.dimensions || !UI.dimensionArea) return 0;
+        const d = String(item.dimensions).trim().toLowerCase().replace(/\*/g, 'x').replace(/×/g, 'x');
+        return (UI.dimensionArea(d) || 0) * (Number(item.quantity) || 0);
+    }
+
     function balanceLabel(balance, isCustomer, personType) {
         const pos = isCustomer ? 'بدهکار' : 'بستانکار';
         const neg = isCustomer ? 'بستانکار' : 'بدهکار';
@@ -140,10 +150,10 @@ const PersonStatementPrint = (function () {
     function checkGroupHtml(t) {
         if (!t.checkGroup || !t.checkGroup.length) return '';
         const lines = t.checkGroup.map(c => {
-            const bits = [`چک <bdi>${esc(c.checkNumber || '-')}</bdi>`];
+            const bits = [`چک <bdi>${escFa(c.checkNumber || '-')}</bdi>`];
             if (c.bankName) bits.push(esc(c.bankName));
             if (c.issuerName) bits.push(esc(c.issuerName));
-            if (c.dueDate) bits.push(`سررسید ${esc(UI.gregorianToPersian(c.dueDate))}`);
+            if (c.dueDate) bits.push(`سررسید ${escFa(UI.gregorianToPersian(c.dueDate))}`);
             bits.push(fmt(c.amount));
             if (c.status) bits.push(esc(STATUS_LABELS[c.status] || c.status));
             return `<div class="item-line">${bits.join(' — ')}</div>`;
@@ -151,25 +161,83 @@ const PersonStatementPrint = (function () {
         return `<div class="items opt-items">${lines}</div>`;
     }
 
-    function itemsTableHtml(t) {
-        if (!t.items || !t.items.length) return checkGroupHtml(t);
-        const lines = t.items.map(item => {
+    /**
+     * Invoice items as their own full-width table under the invoice row, so they
+     * can flow across pages (the invoice row itself stays in one piece). Long
+     * single-quantity lists go two items per line to halve the page count.
+     */
+    function itemsRowHtml(t, colspan) {
+        const items = Array.isArray(t.items) ? t.items : [];
+        if (!items.length) return '';
+        const multiQty = items.some(i => Number(i.quantity) !== 1);
+        const twoUp = !multiQty && items.length > 6;
+
+        let qtySum = 0, total = 0, area = 0;
+        const cells = items.map((item, i) => {
             const isService = item.is_service == 1;
             const name = isService
                 ? (item.item_description || item.productName || 'خدمات')
                 : (item.productName || item.item_description || '-');
-            const bits = [`<b>${esc(name)}</b>`];
-            if (!isService && item.dimensions) bits.push(`<bdi>${esc(item.dimensions)}</bdi>`);
-            bits.push(`${fmt(item.quantity)} عدد × ${fmt(item.unitPrice)}`);
-            if (!isService && item.serialIds && item.serialIds.length) bits.push(`شناسه: <bdi>${esc(item.serialIds.join("، "))}</bdi>`);
-            return `<div class="item-line">${bits.join(' — ')}</div>`;
-        }).join('');
-        return `<div class="items opt-items">${lines}</div>`;
+            const qty = Number(item.quantity) || 0;
+            const unit = Number(item.unitPrice) || 0;
+            qtySum += qty;
+            total += qty * unit;
+            area += itemArea(item);
+            const serials = (!isService && Array.isArray(item.serialIds)) ? item.serialIds.map(String).filter(Boolean) : [];
+            // «گلیم کد 2500» with stock ID 2500 already says it — print the ID only when it adds something.
+            const serialNote = serials.length && !serials.every(s => String(name).includes(s))
+                ? `<span class="sn">شناسه: <bdi>${escFa(serials.join('، '))}</bdi></span>` : '';
+            const parts = [
+                `<td class="i-no">${fa(i + 1)}</td>`,
+                `<td class="i-name">${escFa(name)}${serialNote}</td>`,
+                `<td class="i-dim"><bdi>${isService ? '—' : faDims(item.dimensions)}</bdi></td>`
+            ];
+            if (multiQty) {
+                parts.push(`<td class="i-num">${fmt(qty)}</td>`, `<td class="i-num">${fmt(unit)}</td>`);
+            }
+            parts.push(`<td class="i-num i-amt">${fmt(qty * unit)}</td>`);
+            return parts.join('');
+        });
+
+        const headCells = ['<th class="i-no">#</th>', '<th>کالا</th>', '<th>ابعاد</th>']
+            .concat(multiQty ? ['<th>تعداد</th>', '<th>فی</th>'] : [])
+            .concat(['<th>مبلغ</th>']).join('');
+        const perItemCols = multiQty
+            ? ['4%', '38%', '12%', '8%', '18%', '20%']
+            : (twoUp ? ['4%', '23%', '10%', '12%'] : ['5%', '55%', '18%', '22%']);
+        const colgroup = twoUp
+            ? perItemCols.concat(['2%']).concat(perItemCols).map(w => `<col style="width:${w}">`).join('')
+            : perItemCols.map(w => `<col style="width:${w}">`).join('');
+        const emptyItem = perItemCols.map(() => '<td class="i-empty"></td>').join('');
+
+        let rows = '';
+        if (twoUp) {
+            for (let i = 0; i < cells.length; i += 2) {
+                rows += `<tr>${cells[i]}<td class="i-gap"></td>${cells[i + 1] || emptyItem}</tr>`;
+            }
+        } else {
+            rows = cells.map(c => `<tr>${c}</tr>`).join('');
+        }
+
+        const span = twoUp ? perItemCols.length * 2 + 1 : perItemCols.length;
+        const summary = [`${fa(items.length)} قلم`];
+        if (multiQty) summary.push(`${fa(qtySum)} عدد`);
+        if (area > 0) summary.push(`متراژ ${fa(area.toFixed(2)).replace('.', '٫')} متر مربع`);
+        summary.push(`جمع: <b>${fmt(total)}</b>`);
+
+        return `<tr class="items-row opt-items"><td colspan="${colspan}" class="items-cell">
+            <table class="items-table">
+                <colgroup>${colgroup}</colgroup>
+                <thead><tr>${twoUp ? headCells + '<th class="i-gap"></th>' + headCells : headCells}</tr></thead>
+                <tbody>${rows}<tr class="i-sum"><td colspan="${span}">${summary.join(' · ')}</td></tr></tbody>
+            </table>
+        </td></tr>`;
     }
 
     function rowHtml(r, idx, ledger, personType) {
         const t = r.t;
-        const cls = [];
+        const cls = ['main'];
+        if (!r.prev && idx % 2 === 0) cls.push('alt');
         if (r.prev) cls.push('prev');
         if (t.is_consignment) cls.push('consign');
         if (r.pending) cls.push('pending');
@@ -179,17 +247,21 @@ const PersonStatementPrint = (function () {
         if (r.pending) badges.push('<span class="badge badge-pending">سررسید نرسیده</span>');
         if (t.isUndeliveredOrder) badges.push('<span class="badge badge-info">سفارش تحویل‌نشده</span>');
 
-        let desc = r.prev ? esc(t.description || 'مانده حساب از قبل (اول دوره)') : esc(cleanDescription(t));
+        let desc = r.prev ? escFa(t.description || 'مانده حساب از قبل (اول دوره)') : escFa(cleanDescription(t));
+        const itemCount = Array.isArray(t.items) ? t.items.length : 0;
+        if (itemCount) {
+            desc += `${desc ? ' — ' : ''}<span class="item-count">${fa(itemCount)} قلم کالا</span>`;
+        }
         if (t.checkDetails) {
             const cd = t.checkDetails;
             const bits = [];
-            if (cd.checkNumber) bits.push(`شماره چک: ${esc(cd.checkNumber)}`);
+            if (cd.checkNumber) bits.push(`شماره چک: ${escFa(cd.checkNumber)}`);
             if (cd.bankName) bits.push(`بانک: ${esc(cd.bankName)}`);
-            if (cd.dueDate) bits.push(`سررسید: ${esc(UI.gregorianToPersian(cd.dueDate))}`);
+            if (cd.dueDate) bits.push(`سررسید: ${escFa(UI.gregorianToPersian(cd.dueDate))}`);
             if (cd.status) bits.push(`وضعیت: ${esc(STATUS_LABELS[cd.status] || cd.status)}`);
             if (bits.length) desc += `<div class="sub">${bits.join(' | ')}</div>`;
         }
-        const itemsHtml = itemsTableHtml(t);
+        const itemsHtml = itemCount ? '' : checkGroupHtml(t);
 
         let typeLabel = r.prev ? '' : (DOC_TYPES[t.refType] || '');
         if (!r.prev && t.refType === 'payment') typeLabel = r.credit > 0 ? 'دریافت' : (r.debit > 0 ? 'پرداخت' : typeLabel);
@@ -202,16 +274,16 @@ const PersonStatementPrint = (function () {
             : '<span class="muted">—</span>';
 
         return `<tr class="${cls.join(' ')}">
-            <td class="c">${r.prev ? '' : idx}</td>
-            <td class="c nowrap">${dateText}</td>
+            <td class="c">${r.prev ? '' : fa(idx)}</td>
+            <td class="c nowrap">${fa(dateText)}</td>
             <td class="c col-type">${esc(typeLabel)}</td>
-            <td class="c col-doc">${esc(docNo)}</td>
+            <td class="c col-doc">${escFa(docNo)}</td>
             <td class="desc">${badges.join(' ')}${badges.length && desc ? ' ' : ''}${desc}${itemsHtml}</td>
             <td class="num">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
             <td class="num">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
             <td class="num bal">${balanceCell}</td>
             <td class="c nat">${showBal ? natureChip(r.balance, ledger.isCustomer) : ''}</td>
-        </tr>`;
+        </tr>${itemsRowHtml(t, 9)}`;
     }
 
     function buildHtml(data, params, settings) {
@@ -236,8 +308,8 @@ const PersonStatementPrint = (function () {
         const asset = (p) => new URL(p, origin).href;
         const logoHtml = settings.logo_url ? `<img class="logo opt-logo" src="${esc(settings.logo_url)}" alt="لوگو">` : '';
         const companyLines = [];
-        if (settings.company_phone) companyLines.push(`<span><b>تلفن:</b> ${esc(settings.company_phone)}</span>`);
-        if (settings.company_address) companyLines.push(`<span><b>آدرس:</b> ${esc(settings.company_address)}</span>`);
+        if (settings.company_phone) companyLines.push(`<span><b>تلفن:</b> <bdi>${escFa(settings.company_phone)}</bdi></span>`);
+        if (settings.company_address) companyLines.push(`<span><b>آدرس:</b> ${escFa(settings.company_address)}</span>`);
 
         const personRows = [
             ['نام', person.name],
@@ -278,6 +350,9 @@ const PersonStatementPrint = (function () {
         ].filter(Boolean).join(' ');
 
         const title = `صورتحساب ${person.name || ''}`;
+        // The print footer is written for customers («مشتری گرامی…», returns policy);
+        // it does not belong on a supplier/partner statement.
+        const footerText = (personType === 'customer' && settings.footer_text) ? settings.footer_text : '';
 
         return `<!DOCTYPE html>
 <html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title>
@@ -296,31 +371,51 @@ body.compact { font-size: 10.5px; line-height: 1.5; }
 .letterhead { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #212529; padding-bottom: 8px; }
 .letterhead .logo { max-height: 60px; max-width: 160px; object-fit: contain; }
 .letterhead .co { flex: 1; }
-.letterhead h1 { margin: 0; font-size: 18px; }
+.letterhead h1 { margin: 0 0 2px; font-size: 18px; }
 .letterhead .co-info span { display: inline-block; margin-left: 14px; font-size: 11px; color: #444; }
-.letterhead .doc-meta { text-align: left; font-size: 11px; color: #333; white-space: nowrap; }
+.letterhead .doc-meta { text-align: center; font-size: 10.5px; color: #555; white-space: nowrap; border: 1px solid #ced4da; border-radius: 4px; padding: 3px 10px; line-height: 1.5; }
+.letterhead .doc-meta b { font-size: 12px; color: #111; }
+.header-text { margin-top: 6px; font-size: 10.5px; color: #444; text-align: center; }
 .doc-title { text-align: center; margin: 10px 0 8px; }
-.doc-title h2 { margin: 0; font-size: 16px; }
-.doc-title .period { font-size: 12px; color: #444; }
-.person-card { border: 1px solid #adb5bd; border-radius: 4px; padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 4px 28px; margin-bottom: 8px; }
-.person-card div b { color: #555; font-weight: 600; }
+.doc-title h2 { display: inline-block; margin: 0 0 2px; font-size: 16px; padding: 0 18px 2px; border-bottom: 2px solid #212529; }
+.doc-title .period { font-size: 11.5px; color: #444; }
+.person-card { border: 1px solid #adb5bd; border-right: 4px solid #212529; border-radius: 4px; padding: 6px 12px; display: flex; flex-wrap: wrap; gap: 4px 28px; margin-bottom: 10px; background: #f8f9fa; }
+.person-card .k { color: #666; }
 table.ledger { width: 100%; border-collapse: collapse; table-layout: fixed; }
 table.ledger thead { display: table-header-group; }
-table.ledger th { background: #e9ecef; border: 1px solid #adb5bd; padding: 4px 5px; font-size: 11px; text-align: center; }
-table.ledger td { border: 1px solid #ced4da; padding: 3px 5px; vertical-align: top; }
-table.ledger tbody tr:nth-child(even) { background: #f8f9fa; }
-table.ledger tr { page-break-inside: avoid; }
+table.ledger > thead th { background: #343a40; color: #fff; border: 1px solid #343a40; padding: 4px 3px; font-size: 10.5px; font-weight: 600; text-align: center; line-height: 1.35; white-space: nowrap; }
+table.ledger > thead th small { font-weight: 400; font-size: 9.5px; opacity: .85; }
+table.ledger > tbody > tr > td { border: 1px solid #ced4da; padding: 4px 5px; vertical-align: middle; overflow-wrap: anywhere; }
+table.ledger > tbody > tr.main { page-break-inside: avoid; break-inside: avoid; }
+table.ledger > tbody > tr.alt > td { background: #f6f7f9; }
 td.c { text-align: center; }
-td.num { text-align: left; direction: ltr; white-space: nowrap; font-size: 13px; font-weight: 600; color: #000; letter-spacing: 0.2px; }
+td.num { text-align: left; direction: ltr; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: #000; letter-spacing: 0.2px; }
 td.num.bal { font-weight: 700; }
 body.compact td.num { font-size: 11.5px; }
 td.nowrap { white-space: nowrap; }
-td.nat { padding: 3px 2px; }
-.chip { display: inline-block; min-width: 22px; padding: 0 3px; border: 1px solid; border-radius: 3px; font-size: 10px; font-weight: 700; }
-.chip.deb { color: #b02a37; border-color: #b02a37; }
-.chip.cre { color: #146c43; border-color: #146c43; }
-table.ledger td { overflow-wrap: anywhere; }
-tr.prev td { background: #dee2e6 !important; font-weight: 600; }
+table.ledger td.nat { padding: 3px 1px; overflow-wrap: normal; }
+.chip { display: inline-block; white-space: nowrap; min-width: 24px; padding: 0 4px; border: 1px solid; border-radius: 3px; font-size: 10px; font-weight: 700; line-height: 1.6; }
+.chip.deb { color: #b02a37; border-color: #b02a37; background: #fdf1f2; }
+.chip.cre { color: #146c43; border-color: #146c43; background: #eef8f2; }
+.deb-text { color: #b02a37; font-weight: 700; }
+.cre-text { color: #146c43; font-weight: 700; }
+.item-count { color: #555; font-size: 10.5px; }
+tr.prev td { background: #e9ecef !important; font-weight: 600; }
+/* Invoice items: a sub-table under the invoice row; its rows may run onto the next page. */
+tr.items-row > td.items-cell { padding: 0 0 4px 0; border-top: 0; background: #fff; }
+table.items-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9.5px; line-height: 1.45; }
+table.items-table thead { display: table-header-group; }
+table.items-table th { background: #f1f3f5; color: #495057; font-weight: 600; border-bottom: 1px solid #adb5bd; padding: 2px 4px; text-align: center; }
+table.items-table td { padding: 1px 4px; border-bottom: 1px solid #edf0f2; vertical-align: middle; }
+table.items-table tr { page-break-inside: avoid; break-inside: avoid; }
+table.items-table .i-no { text-align: center; color: #868e96; }
+table.items-table .i-dim { text-align: center; white-space: nowrap; }
+table.items-table .i-num { text-align: left; direction: ltr; white-space: nowrap; }
+table.items-table .i-amt { font-weight: 600; }
+table.items-table .i-gap { border: 0; background: #fff; }
+table.items-table td.i-gap { border-right: 1px solid #ced4da; }
+table.items-table .sn { color: #6c757d; margin-right: 4px; }
+table.items-table tr.i-sum td { border-bottom: 0; border-top: 1px solid #adb5bd; text-align: left; padding: 2px 6px; color: #333; font-size: 10px; }
 tr.consign td { font-style: italic; }
 tr.pending td { background: #fff8e1 !important; }
 .muted { color: #888; }
@@ -336,6 +431,8 @@ tr.pending td { background: #fff8e1 !important; }
 .totals .box .k { font-size: 10.5px; color: #555; }
 .totals .box .v { font-size: 16px; font-weight: 800; color: #000; letter-spacing: 0.3px; }
 .totals .final { border: 2px solid #212529; }
+.totals .final.is-deb .v { color: #b02a37; }
+.totals .final.is-cre .v { color: #146c43; }
 .words { margin-top: 6px; font-size: 11.5px; page-break-inside: avoid; }
 .pending-note, .opts-note { margin-top: 6px; font-size: 10.5px; color: #555; page-break-inside: avoid; }
 .bank { margin-top: 8px; font-size: 10.5px; border-top: 1px dashed #aaa; padding-top: 5px; page-break-inside: avoid; }
@@ -365,25 +462,25 @@ body.hide-logo .opt-logo, body.hide-company .co-info, body.hide-sign .signs, bod
             <h1>${esc(settings.company_name || 'سیستم حسابداری')}</h1>
             <div class="co-info">${companyLines.join('')}</div>
         </div>
-        <div class="doc-meta">تاریخ چاپ: ${esc(UI.today())}</div>
+        <div class="doc-meta">تاریخ چاپ<br><b>${escFa(UI.today())}</b></div>
     </div>
-    ${settings.header_text ? `<div class="footer-text">${esc(settings.header_text)}</div>` : ''}
+    ${settings.header_text ? `<div class="header-text">${escFa(settings.header_text)}</div>` : ''}
     <div class="doc-title">
         <h2>صورتحساب ${esc(personLabel)}</h2>
-        <div class="period">از تاریخ ${esc(params.persianStartDate || '')} تا تاریخ ${esc(params.persianEndDate || '')}</div>
+        <div class="period">از تاریخ <b>${escFa(params.persianStartDate || '')}</b> تا تاریخ <b>${escFa(params.persianEndDate || '')}</b></div>
     </div>
-    <div class="person-card">${personRows.map(([k, v]) => `<div><b>${k}:</b> ${esc(v)}</div>`).join('')}</div>
+    <div class="person-card">${personRows.map(([k, v]) => `<div><span class="k">${k}:</span> ${k === 'تلفن' ? `<bdi>${escFa(v)}</bdi>` : escFa(v)}</div>`).join('')}</div>
     <table class="ledger">
         <thead><tr>
-            <th style="width:30px">ردیف</th>
-            <th style="width:68px">تاریخ</th>
+            <th style="width:34px">ردیف</th>
+            <th style="width:70px">تاریخ</th>
             <th class="col-type" style="width:66px">نوع سند</th>
-            <th class="col-doc" style="width:46px">شماره</th>
+            <th class="col-doc" style="width:44px">شماره</th>
             <th>شرح</th>
-            <th style="width:106px">بدهکار به شرکت (${esc(currency)})</th>
-            <th style="width:106px">بستانکار از شرکت (${esc(currency)})</th>
-            <th style="width:112px">مانده (${esc(currency)})</th>
-            <th style="width:34px">بد/بس</th>
+            <th style="width:100px">بدهکار به شرکت<br><small>(${esc(currency)})</small></th>
+            <th style="width:100px">بستانکار از شرکت<br><small>(${esc(currency)})</small></th>
+            <th style="width:108px">مانده<br><small>(${esc(currency)})</small></th>
+            <th class="nat" style="width:40px">بد/بس</th>
         </tr></thead>
         <tbody>${bodyRows}</tbody>
     </table>
@@ -391,9 +488,9 @@ body.hide-logo .opt-logo, body.hide-company .co-info, body.hide-sign .signs, bod
         <div class="box"><div class="k">مانده از قبل</div><div class="v">${params.showPreviousBalance ? fmt(Math.abs(ledger.opening)) : '—'}</div></div>
         <div class="box"><div class="k">جمع بدهکار به شرکت</div><div class="v">${fmt(ledger.totalDebit)}</div></div>
         <div class="box"><div class="k">جمع بستانکار از شرکت</div><div class="v">${fmt(ledger.totalCredit)}</div></div>
-        <div class="box final"><div class="k">مانده نهایی (${closingLabel})</div><div class="v">${fmt(closingAbs)}</div></div>
+        <div class="box final ${ledger.closing >= 0 === ledger.isCustomer ? 'is-deb' : 'is-cre'}"><div class="k">مانده نهایی (${closingLabel})</div><div class="v">${fmt(closingAbs)}</div></div>
     </div>
-    <div class="words">مانده نهایی به حروف: <b>${esc(amountToWords(closingAbs))} ${esc(currency)}</b> — ${closingLabel} (${closingNote})</div>
+    <div class="words">مانده نهایی به حروف: <b>${esc(amountToWords(closingAbs))} ${esc(currency)}</b> — <span class="${ledger.closing >= 0 === ledger.isCustomer ? 'deb-text' : 'cre-text'}">${closingLabel}</span> (${closingNote})</div>
     ${pendingBox}
     <div class="opts-note">${optionNotes.map(esc).join(' · ')}</div>
     ${bankInfo.length ? `<div class="bank">${bankInfo.join(' — ')}</div>` : ''}
@@ -401,7 +498,7 @@ body.hide-logo .opt-logo, body.hide-company .co-info, body.hide-sign .signs, bod
         <div class="sig">مهر و امضای ${esc(settings.company_name || 'شرکت')}</div>
         <div class="sig">تأیید ${esc(personLabel)}${person.name ? ` (${esc(person.name)})` : ''}</div>
     </div>
-    ${settings.footer_text ? `<div class="footer-text">${esc(settings.footer_text)}</div>` : ''}
+    ${footerText ? `<div class="footer-text">${escFa(footerText)}</div>` : ''}
 </div>
 <script>
 document.querySelectorAll('.preview-toolbar input[data-cls]').forEach(function (cb) {
@@ -433,5 +530,5 @@ document.querySelectorAll('.preview-toolbar input[data-cls]').forEach(function (
         return true;
     }
 
-    return { open, amountToWords, buildLedger };
+    return { open, amountToWords, buildLedger, buildHtml };
 })();

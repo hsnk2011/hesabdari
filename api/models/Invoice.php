@@ -134,6 +134,12 @@ class Invoice extends BaseModel {
             $this->where .= " AND w.warehouse_type = 'order'";
         }
 
+        // نوع فروش (خانگی / همکار-عمده / داخلی)
+        $saleChannelFilter = normalize_sale_channel($input['saleChannelFilter'] ?? null);
+        if ($saleChannelFilter !== null && strpos($input['tableName'], 'sales') !== false) {
+            $this->where .= " AND si.sale_channel = '{$saleChannelFilter}'"; // whitelisted value
+        }
+
         // Delivery status filter
         $deliveryStatusFilter = $input['deliveryStatusFilter'] ?? '';
         if (in_array($deliveryStatusFilter, ['preparing', 'ready', 'delivered'])) {
@@ -853,6 +859,14 @@ class Invoice extends BaseModel {
                     throw new Exception('فروشنده انتخاب‌شده نامعتبر است.', 400);
                 }
             }
+            // نوع فروش: از فرم، وگرنه (فاکتور تازه) از نوع مشتری، وگرنه (ویرایش) همان مقدار قبلی.
+            $sale_channel = normalize_sale_channel($data['sale_channel'] ?? null);
+            if ($sale_channel === null && $invoiceId <= 0) {
+                $chStmt = $this->conn->prepare("SELECT sale_channel FROM customers WHERE id = ? AND entity_id = ?");
+                $chStmt->bind_param('ii', $customerId, $entity_id);
+                $chStmt->execute();
+                $sale_channel = normalize_sale_channel(db_stmt_to_assoc_array($chStmt)[0]['sale_channel'] ?? null) ?? 'retail';
+            }
 
             // Server-side validation & recomputation: discount and tax must derive from items,
             // not be trusted from the client (mirrors Quotation::save validation).
@@ -868,9 +882,9 @@ class Invoice extends BaseModel {
 
             if ($invoiceId > 0) {
                 // Update Invoice Header
-                $stmt_upd = $this->conn->prepare("UPDATE sales_invoices SET customerId = ?, date = ?, totalAmount = ?, discount = ?, description = ?, due_date = ?, payment_terms = ?, tax_rate = ?, tax_amount = ?, invoice_number = ?, salesperson_id = ? WHERE id = ? AND entity_id = ?");
+                $stmt_upd = $this->conn->prepare("UPDATE sales_invoices SET customerId = ?, date = ?, totalAmount = ?, discount = ?, description = ?, due_date = ?, payment_terms = ?, tax_rate = ?, tax_amount = ?, invoice_number = ?, salesperson_id = ?, sale_channel = COALESCE(?, sale_channel) WHERE id = ? AND entity_id = ?");
                 $desc = $data['description'] ?? '';
-                $stmt_upd->bind_param("isdssssddsiii", $customerId, $date, $serverTotalAmount, $discount, $desc, $due_date, $payment_terms, $tax_rate, $tax_amount, $invoice_number, $salesperson_id, $invoiceId, $entity_id);
+                $stmt_upd->bind_param("isdssssddsisii", $customerId, $date, $serverTotalAmount, $discount, $desc, $due_date, $payment_terms, $tax_rate, $tax_amount, $invoice_number, $salesperson_id, $sale_channel, $invoiceId, $entity_id);
                 $stmt_upd->execute();
                 $stmt_upd->close();
 
@@ -929,7 +943,7 @@ class Invoice extends BaseModel {
                     $itemId = intval($it['id']);
                     $oldItem = $existing_items_map[$itemId];
                     $newQty = intval($it['quantity']);
-                    $newDim = $it['dimensions'] ?? '';
+                    $newDim = normalize_dimensions($it['dimensions'] ?? '');
                     $newPrice = floatval(str_replace(',', '', $it['unitPrice'] ?? 0));
                     $newProductId = intval($it['productId'] ?? $oldItem['productId']);
                     
@@ -981,9 +995,9 @@ class Invoice extends BaseModel {
             } else {
                 // INSERT NEW INVOICE
                 $is_consignment = isset($data['is_consignment']) ? intval($data['is_consignment']) : 0;
-                $stmt_ins = $this->conn->prepare("INSERT INTO sales_invoices (entity_id, customerId, date, totalAmount, discount, paidAmount, description, is_consignment, due_date, payment_terms, tax_rate, tax_amount, invoice_number, salesperson_id) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt_ins = $this->conn->prepare("INSERT INTO sales_invoices (entity_id, customerId, date, totalAmount, discount, paidAmount, description, is_consignment, due_date, payment_terms, tax_rate, tax_amount, invoice_number, salesperson_id, sale_channel) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $desc = $data['description'] ?? '';
-                $stmt_ins->bind_param("iissdsissddsi", $entity_id, $customerId, $date, $serverTotalAmount, $discount, $desc, $is_consignment, $due_date, $payment_terms, $tax_rate, $tax_amount, $invoice_number, $salesperson_id);
+                $stmt_ins->bind_param("iissdsissddsis", $entity_id, $customerId, $date, $serverTotalAmount, $discount, $desc, $is_consignment, $due_date, $payment_terms, $tax_rate, $tax_amount, $invoice_number, $salesperson_id, $sale_channel);
                 $stmt_ins->execute();
                 $invoiceId = $this->conn->insert_id;
                 $stmt_ins->close();
@@ -1056,7 +1070,7 @@ class Invoice extends BaseModel {
         }
 
         $productId = intval($it['productId'] ?? 0);
-        $dimensions = $it['dimensions'] ?? '';
+        $dimensions = normalize_dimensions($it['dimensions'] ?? '');
         if ($productId <= 0 || empty($dimensions) || $quantity <= 0) return;
 
         // One invoice line per product+dimensions (uk_invoice_product_dims).
@@ -1388,7 +1402,7 @@ class Invoice extends BaseModel {
                     $itemId = intval($it['id']);
                     $oldItem = $existing_items_map[$itemId];
                     $newQty = intval($it['quantity']);
-                    $newDim = $it['dimensions'] ?? '';
+                    $newDim = normalize_dimensions($it['dimensions'] ?? '');
                     $newPrice = floatval(str_replace(',', '', $it['unitPrice'] ?? 0));
                     
                     // Check if this is a service item
@@ -1766,7 +1780,7 @@ class Invoice extends BaseModel {
                 throw new Exception($res['error'] ?? 'خطا در ساخت محصول جدید', (int)($res['statusCode'] ?? 400) ?: 400);
             }
         }
-        $dimensions = trim((string)($it['dimensions'] ?? ''));
+        $dimensions = normalize_dimensions($it['dimensions'] ?? '');
         $invalidDim = ($dimensions === '' || $dimensions === 'custom' || $dimensions === 'ابتدا طرح را انتخاب کنید' || $dimensions === 'انتخاب کنید...');
         if ($newName && ($productId <= 0 || $invalidDim || $quantity <= 0)) {
             throw new Exception('قلم «' . $newName . '» ذخیره نشد. نام، ابعاد و تعداد را کامل کنید.', 400);
@@ -2303,13 +2317,14 @@ class Invoice extends BaseModel {
             return ['success' => true, 'message' => 'فاکتور امانی به طور کامل به فاکتور فروش تبدیل شد.', 'newInvoiceId' => $consignmentInvoiceId];
         }
 
-        $stmt_new = $this->conn->prepare("INSERT INTO sales_invoices (entity_id, customerId, date, totalAmount, discount, paidAmount, description, is_consignment, due_date, payment_terms, tax_rate, tax_amount, invoice_number) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)");
+        $stmt_new = $this->conn->prepare("INSERT INTO sales_invoices (entity_id, customerId, date, totalAmount, discount, paidAmount, description, is_consignment, due_date, payment_terms, tax_rate, tax_amount, invoice_number, sale_channel) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)");
         $desc = ($consignmentInvoice['description'] ?? '') . " (منتقل شده از فاکتور امانی #{$consignmentInvoiceId})";
         $c_due = $consignmentInvoice['due_date'] ?? null;
         $c_pt  = $consignmentInvoice['payment_terms'] ?? null;
         $c_in  = null; // avoid duplicate invoice_number
         $movedPaid = $split['movedPaid'];
-        $stmt_new->bind_param("iisdddsssdds", $entity_id, $consignmentInvoice['customerId'], $consignmentInvoice['date'], $split['selectedItemsTotal'], $split['proportionalDiscount'], $movedPaid, $desc, $c_due, $c_pt, $split['taxRate'], $split['proportionalTax'], $c_in);
+        $c_ch  = normalize_sale_channel($consignmentInvoice['sale_channel'] ?? null) ?? 'retail';
+        $stmt_new->bind_param("iisdddsssddss", $entity_id, $consignmentInvoice['customerId'], $consignmentInvoice['date'], $split['selectedItemsTotal'], $split['proportionalDiscount'], $movedPaid, $desc, $c_due, $c_pt, $split['taxRate'], $split['proportionalTax'], $c_in, $c_ch);
         $stmt_new->execute();
         $newInvoiceId = $this->conn->insert_id;
 

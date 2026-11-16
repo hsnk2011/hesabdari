@@ -124,26 +124,131 @@ const ProductManager = (function () {
             const isOrder = info.orderQty > 0;
             const badgeClass = isOrder ? 'bg-primary' : 'bg-light text-dark border';
             const qtyClass = isOrder ? 'text-white-50' : 'text-success';
-            return `<span class="badge ${badgeClass} me-1 mb-1">${UI.escapeHtml(dim)} <small class="${qtyClass}">(${info.qty})</small></span>`;
+            return `<span class="badge ${badgeClass}">${UI.escapeHtml(dim)} <small class="${qtyClass}">(${info.qty})</small></span>`;
         }).join('');
-        
+
         if (remaining > 0) {
             html += `<span class="badge bg-secondary">${remaining}+ بیشتر</span>`;
         }
-        
-        return html;
+
+        // A wrapping box: a cell of only badges is kept on one line by table-sort.js,
+        // so without it three sizes ran into the next column.
+        return `<div class="d-flex flex-wrap gap-1">${html}</div>`;
+    }
+
+    /**
+     * «شناسه انبار» of the pieces counted in the stock column (inventory_items.serial_id —
+     * the unique ID of each rug; see «واژه‌نامه شناسه‌ها» in DOCUMENTATION.md).
+     */
+    function renderSerialIds(stock) {
+        const ids = [];
+        (stock || []).forEach(s => (s.serial_ids || []).forEach(id => {
+            const v = String(id ?? '').trim();
+            if (v !== '' && !ids.includes(v)) ids.push(v);
+        }));
+        if (!ids.length) return '<span class="text-muted">-</span>';
+        const shown = ids.slice(0, 4).map(id => `<code class="text-nowrap" dir="ltr">${UI.escapeHtml(id)}</code>`).join('');
+        const more = ids.length > 4 ? `<span class="badge bg-secondary">${ids.length - 4}+</span>` : '';
+        return `<div class="d-flex flex-wrap gap-1 align-items-center" title="${UI.escapeHtml(ids.join('، '))}">${shown}${more}</div>`;
+    }
+
+    // ---- «هر ردیف»: one row per product (default) or one row per item (rug) ----
+    const ITEM_SORTS = ['serial_id', 'name', 'collectionName', 'dimensions', 'warehouse', 'status', 'entry_date'];
+    const PRODUCT_SORTS = ['name', 'collectionName', 'total_stock'];
+    const ITEM_STATUS = {
+        in_stock: ['موجود', 'bg-success'],
+        returned: ['موجود (مرجوع شده)', 'bg-info text-dark'],
+        sold: ['فروخته شده', 'bg-secondary'],
+        consignment_out: ['امانی', 'bg-warning text-dark'],
+        returned_to_supplier: ['مرجوع به تامین‌کننده', 'bg-dark'],
+        reserved: ['رزرو شده', 'bg-warning text-dark'],
+        damaged: ['آسیب دیده', 'bg-danger'],
+    };
+    let productTheadHtml = null;
+
+    function isItemRows() {
+        return (AppConfig.TABLE_STATES.products || {}).viewMode === 'items';
+    }
+
+    /** Switch the header, buttons and sort key for the current «هر ردیف» mode. */
+    function applyRowsMode() {
+        const state = AppConfig.TABLE_STATES.products;
+        const items = isItemRows();
+        const thead = $('#products-table thead');
+        if (productTheadHtml === null) productTheadHtml = thead.html();
+        const itemHead = document.getElementById('product-items-thead');
+        thead.html(items && itemHead ? itemHead.innerHTML : productTheadHtml);
+        $('#rows-per-item-btn').toggleClass('active', items);
+        $('#rows-per-product-btn').toggleClass('active', !items);
+        // The card view is per product only.
+        $('#view-card-btn').prop('disabled', items);
+        if (items && currentViewMode === 'card') {
+            currentViewMode = 'table';
+            $('#view-table-btn').addClass('active');
+            $('#view-card-btn').removeClass('active');
+            $('#products-table-view').show();
+            $('#products-card-view').hide();
+        }
+        if (!(items ? ITEM_SORTS : PRODUCT_SORTS).includes(state.sortBy)) {
+            state.sortBy = 'name';
+            state.sortOrder = 'ASC';
+        }
+        $('.product-select-checkbox, .item-select-checkbox').prop('checked', false);
+        updateBulkPrintButton();
+    }
+
+    function renderItemsTable(data) {
+        const body = $('#products-table-body').empty();
+        if (!data || !data.length) return body.html('<tr><td colspan="10" class="text-center text-muted py-4">کالایی یافت نشد.</td></tr>');
+        data.forEach(item => {
+            const name = UI.escapeHtml(item.product_name || '');
+            const thumb = item.product_thumb
+                ? `<img src="${UI.escapeHtml(item.product_thumb)}" data-full="${UI.escapeHtml(item.product_image_full || item.product_thumb)}" data-title="${name}" class="rounded product-image-preview" loading="lazy" decoding="async" style="width: 40px; height: 40px; object-fit: cover; cursor: zoom-in;" alt="${name}">`
+                : `<div class="bg-light rounded d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;"><i class="bi bi-image text-muted"></i></div>`;
+            const collection = item.collectionName
+                ? `<span class="badge ${item.collectionType === 'machine' ? 'bg-info' : 'bg-warning text-dark'}">${UI.escapeHtml(item.collectionName)}</span>` : '-';
+            const isOrder = item.warehouse_type === 'order';
+            const warehouse = item.warehouse_name
+                ? `<span class="badge ${isOrder ? 'bg-primary' : 'bg-light text-dark border'}">${UI.escapeHtml(item.warehouse_name)}${isOrder ? ' · سفارش' : ''}</span>`
+                : '<span class="text-muted">بدون انبار</span>';
+            const [statusLabel, statusClass] = ITEM_STATUS[item.status] || [item.status || '-', 'bg-secondary'];
+            const entry = item.entry_date ? UI.gregorianToPersian(String(item.entry_date).slice(0, 10)) : '-';
+            body.append(`<tr>
+                <td><input type="checkbox" class="item-select-checkbox" value="${Number(item.id)}" data-warehouse-id="${Number(item.warehouse_id) || ''}"></td>
+                <td>${thumb}</td>
+                <td><code class="text-nowrap" dir="ltr">${UI.escapeHtml(item.serial_id || '')}</code></td>
+                <td><strong>${name}</strong></td>
+                <td>${collection}</td>
+                <td><span dir="ltr" class="text-nowrap">${UI.escapeHtml(item.dimensions || '-')}</span></td>
+                <td>${warehouse}</td>
+                <td><span class="badge ${statusClass}">${statusLabel}</span></td>
+                <td>${entry}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-success btn-print-item-label" data-id="${Number(item.id)}" title="چاپ لیبل این فرش"><i class="bi bi-printer"></i></button>
+                        <button class="btn btn-outline-info btn-print-barcode" data-id="${Number(item.product_id)}" title="مدیریت انبار این محصول"><i class="bi bi-boxes"></i></button>
+                    </div>
+                </td>
+            </tr>`);
+        });
+        updateBulkPrintButton();
+        App.applyPermissions();
     }
 
     function renderTable(data) {
         productsCacheForModal = data || [];
-        
+        if (isItemRows()) {
+            renderItemsTable(data);
+            return;
+        }
+
         if (currentViewMode === 'card') {
             renderCardView(data);
             return;
         }
         
         const body = $('#products-table-body').empty();
-        if (!data || !data.length) return body.html('<tr><td colspan="8" class="text-center text-muted py-4">محصولی یافت نشد.</td></tr>');
+        if (!data || !data.length) return body.html('<tr><td colspan="9" class="text-center text-muted py-4">محصولی یافت نشد.</td></tr>');
 
         data.forEach(p => {
             const fullImage = p.primary_full_image || p.primary_image;
@@ -180,6 +285,7 @@ const ProductManager = (function () {
                 <td>${collectionBadge}</td>
                 <td style="max-width: 180px;">${warehousesHtml}</td>
                 <td style="max-width: 200px;">${stockHtml}</td>
+                <td style="max-width: 220px;">${renderSerialIds(p.stock)}</td>
                 <td title="${p.description || ''}">${descriptionShort}</td>
                 <td>
                     <div class="btn-group btn-group-sm">
@@ -743,7 +849,8 @@ const ProductManager = (function () {
      * بروزرسانی دکمه چاپ دسته‌ای لیبل بر اساس چک‌باکس‌های انتخاب‌شده
      */
     function updateBulkPrintButton() {
-        const checkedCount = $('.product-select-checkbox:checked').length;
+        const boxSel = isItemRows() ? '.item-select-checkbox' : '.product-select-checkbox';
+        const checkedCount = $(`${boxSel}:checked`).length;
         const btn = $('#bulk-print-labels-btn');
         const transferBtn = $('#bulk-transfer-products-btn');
         if (checkedCount > 0) {
@@ -756,8 +863,8 @@ const ProductManager = (function () {
             transferBtn.hide();
         }
         // بروزرسانی وضعیت select all
-        const totalCheckboxes = $('.product-select-checkbox').length;
-        $('#select-all-products').prop('checked', totalCheckboxes > 0 && checkedCount === totalCheckboxes);
+        const totalCheckboxes = $(boxSel).length;
+        $(isItemRows() ? '#select-all-items' : '#select-all-products').prop('checked', totalCheckboxes > 0 && checkedCount === totalCheckboxes);
     }
 
     /**
@@ -910,19 +1017,46 @@ const ProductManager = (function () {
             manager.load();
         });
 
+        // «هر ردیف»: محصول / کالا
+        $('#rows-per-product-btn, #rows-per-item-btn').on('click', function () {
+            const state = AppConfig.TABLE_STATES.products;
+            const mode = this.id === 'rows-per-item-btn' ? 'items' : 'products';
+            if ((state.viewMode || 'products') === mode) return;
+            state.viewMode = mode;
+            state.currentPage = 1;
+            applyRowsMode();
+            manager.load();
+        });
+        applyRowsMode();
+
         // انتخاب همه محصولات
         $('body').on('change', '#select-all-products', function () {
             $('.product-select-checkbox').prop('checked', $(this).is(':checked'));
             updateBulkPrintButton();
         });
-
-        // تغییر وضعیت چک‌باکس محصول
-        $('body').on('change', '.product-select-checkbox', function () {
+        $('body').on('change', '#select-all-items', function () {
+            $('.item-select-checkbox').prop('checked', $(this).is(':checked'));
             updateBulkPrintButton();
+        });
+
+        // تغییر وضعیت چک‌باکس محصول / کالا
+        $('body').on('change', '.product-select-checkbox, .item-select-checkbox', function () {
+            updateBulkPrintButton();
+        });
+
+        // چاپ لیبل یک فرش (نمای «کالا»)
+        $('body').on('click', '#products-table .btn-print-item-label', function () {
+            BarcodeManager.printBatch([String($(this).data('id'))]);
         });
 
         // چاپ لیبل محصولات انتخاب‌شده
         $('#bulk-print-labels-btn').on('click', async function () {
+            if (isItemRows()) {
+                const itemIds = $('.item-select-checkbox:checked').map(function () { return $(this).val(); }).get();
+                if (!itemIds.length) { UI.showError('هیچ کالایی انتخاب نشده است.'); return; }
+                BarcodeManager.printBatch(itemIds);
+                return;
+            }
             const selectedIds = [];
             $('.product-select-checkbox:checked').each(function () {
                 selectedIds.push($(this).val());
@@ -942,6 +1076,12 @@ const ProductManager = (function () {
         });
 
         $('#bulk-transfer-products-btn').on('click', async function () {
+            if (isItemRows()) {
+                const itemIds = $('.item-select-checkbox:checked').map(function () { return $(this).val(); }).get();
+                if (!itemIds.length) { UI.showError('هیچ کالایی انتخاب نشده است.'); return; }
+                await openTransferDialog({ itemIds, countLabel: itemIds.length + ' فرش', refresh: 'products' });
+                return;
+            }
             const selectedIds = [];
             $('.product-select-checkbox:checked').each(function () {
                 selectedIds.push(parseInt($(this).val(), 10));
@@ -993,7 +1133,10 @@ const ProductManager = (function () {
 
         $('body').on('click', `#products-table .btn-print-barcode, #products-card-view .btn-print-barcode`, function () {
             const productId = $(this).data('id');
-            const productData = productsCacheForModal.find(p => p.id == productId);
+            // In the «کالا» view the page holds rug rows, so read the product from the app cache.
+            const productData = isItemRows()
+                ? (App.getCache().products || []).find(p => p.id == productId)
+                : productsCacheForModal.find(p => p.id == productId);
             if (productData) {
                 prepareModal(productData).then(() => {
                     const inventoryTabButton = document.querySelector('#product-inventory-tab');

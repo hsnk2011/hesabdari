@@ -268,6 +268,19 @@ class CheckController {
         }
     }
 
+    public function getChecksMaturity($data) {
+        try {
+            $result = $this->checkModel->getMaturity(is_array($data) ? $data : []);
+            if (isset($result['error'])) {
+                send_json(['error' => $result['error']], $result['statusCode'] ?? 500);
+                return;
+            }
+            send_json($result);
+        } catch (Exception $e) {
+            send_json(['error' => 'خطای سرور هنگام دریافت تقویم سررسید چک‌ها: ' . $e->getMessage()], 500);
+        }
+    }
+
     /**
      * راس‌گیری و انتقال چند چک به یک شخص
      */

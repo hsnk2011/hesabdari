@@ -22,8 +22,11 @@ class DashboardModel {
         $monthStart = jalali_to_gregorian($jalaliToday[0], $jalaliToday[1], 1) ?: $today;
         
         $output = [
+            // «داخلی» (درون‌گروهی) جزو فروش نیست؛ تفکیک خانگی / همکار-عمده کنار جمع می‌آید.
             'salesLast30Days' => $this->getSalesLast30Days($thirty_days_ago, $entityId),
             'salesMonthToDate' => $this->getSalesLast30Days($monthStart, $entityId),
+            'salesLast30DaysByChannel' => $this->getSalesByChannelSince($thirty_days_ago, $entityId),
+            'salesMonthToDateByChannel' => $this->getSalesByChannelSince($monthStart, $entityId),
             'salesMonthStart' => $jalaliToday[0] . '/' . $jalaliToday[1] . '/01',
             'topIndebtedSuppliers' => $this->getTopIndebtedSuppliers($entityId),
             'unsettledCustomers' => $this->getUnsettledCustomers($entityId),
@@ -72,11 +75,23 @@ class DashboardModel {
 
 
     private function getSalesLast30Days($startDate, $entityId) {
-        $stmt = $this->conn->prepare("SELECT SUM(totalAmount - discount) as total FROM sales_invoices WHERE entity_id = ? AND is_consignment = 0 AND date >= ?");
+        $stmt = $this->conn->prepare("SELECT SUM(totalAmount - discount) as total FROM sales_invoices WHERE entity_id = ? AND is_consignment = 0 AND date >= ? AND sale_channel <> 'internal'");
         $stmt->bind_param("is", $entityId, $startDate);
         $stmt->execute();
         $result = db_stmt_to_assoc_array($stmt);
         return $result[0]['total'] ?? 0;
+    }
+
+    /** ['retail' => .., 'trade' => .., 'internal' => ..] net of invoice discount, since $startDate. */
+    private function getSalesByChannelSince($startDate, $entityId) {
+        $out = ['retail' => 0.0, 'trade' => 0.0, 'internal' => 0.0];
+        $stmt = $this->conn->prepare("SELECT sale_channel, SUM(totalAmount - discount) AS total FROM sales_invoices WHERE entity_id = ? AND is_consignment = 0 AND date >= ? GROUP BY sale_channel");
+        $stmt->bind_param("is", $entityId, $startDate);
+        $stmt->execute();
+        foreach (db_stmt_to_assoc_array($stmt) as $r) {
+            if (isset($out[$r['sale_channel']])) $out[$r['sale_channel']] = (float)$r['total'];
+        }
+        return $out;
     }
 
     private function getTopIndebtedSuppliers($entityId) {

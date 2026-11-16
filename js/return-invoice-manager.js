@@ -100,8 +100,9 @@ const ReturnInvoiceManager = (function () {
         
         // If showDetails is enabled, add details row after main row
         if (showDetails) {
+            // Same status class as the invoice row, so the whole invoice block is tinted.
             const detailsHtml = _renderReturnInvoiceItemsDetails(inv);
-            return row.add($(detailsHtml));
+            return row.add($(detailsHtml).addClass(isSettled ? 'is-settled' : 'is-unsettled'));
         }
         
         return row;

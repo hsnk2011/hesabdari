@@ -103,7 +103,7 @@ const InvoiceManager = (function () {
         const row = $(`<tr class="${rowStatusClass}${isOrderWarehouse ? ' purchase-order-warehouse-row' : ''}">
             <td>${returnIcon}${noSerialIcon}${UI.escapeHtml(String(inv.invoice_number || inv.id))}${orderWarehouseBadge}</td>
             <td>${persianDateStr}</td>
-            <td>${personName || ''}${isOrderWarehouse ? `<div class="small text-primary mt-1"><i class="bi bi-building-gear me-1"></i>${UI.escapeHtml(orderWhTitle)}</div>` : ''}</td>
+            <td>${personName || ''}${type === 'sales' ? ' ' + UI.saleChannelBadge(inv.sale_channel) : ''}${isOrderWarehouse ? `<div class="small text-primary mt-1"><i class="bi bi-building-gear me-1"></i>${UI.escapeHtml(orderWhTitle)}</div>` : ''}</td>
             <td>${UI.formatCurrency(inv.totalAmount)}</td>
             <td class="text-info">${UI.formatCurrency(inv.discount)}</td>
             <td>${UI.formatCurrency(inv.paidAmount)}</td>
@@ -138,8 +138,9 @@ const InvoiceManager = (function () {
         
         // If showDetails is enabled, add details row after main row
         if (showDetails) {
+            // Same status class as the invoice row, so the whole invoice block is tinted.
             const detailsHtml = _renderInvoiceItemsDetails(inv);
-            return row.add($(detailsHtml));
+            return row.add($(detailsHtml).addClass(isSettled ? 'is-settled' : 'is-unsettled'));
         }
         
         return row;
@@ -212,12 +213,9 @@ const InvoiceManager = (function () {
 
     /** مساحت متر مربع از ابعاد ردیف فاکتور — قواعد مشترک (نگاشت/آستانه از تنظیمات) */
     function getInvoiceRowArea(row) {
-        let dims = row.find('.dimensions-select').val();
-        if (dims === 'custom') {
-            dims = (row.find('.custom-dimension-input').val() || '').trim();
-        }
+        const dims = getInvoiceRowDimensions(row);
         if (!dims) return 0;
-        return UI.dimensionArea(String(dims).trim().toLowerCase().replace(/\*/g, 'x').replace(/×/g, 'x'));
+        return UI.dimensionArea(dims);
     }
 
     function applyMeterPriceToUnit(row) {
@@ -518,7 +516,7 @@ const InvoiceManager = (function () {
         if (dims === 'custom') {
             dims = (row.find('.custom-dimension-input').val() || '').trim();
         }
-        return String(dims || '').trim();
+        return UI.normalizeDimensions(dims);
     }
 
     function getInvoicePersonId(type) {
@@ -948,10 +946,7 @@ const InvoiceManager = (function () {
         if (!serialSelect.length) return;
 
         const productId = row.find('.product-select').val();
-        let dimension = row.find('.dimensions-select').val();
-        if (dimension === 'custom') {
-            dimension = (row.find('.custom-dimension-input').val() || '').trim();
-        }
+        const dimension = getInvoiceRowDimensions(row);
         const qty = parseInt(row.find('.quantity').val()) || 1;
         const modalId = '#' + row.closest('.modal').attr('id');
 
@@ -976,7 +971,8 @@ const InvoiceManager = (function () {
         const product = (App.getCache().products || []).find(p => p.id == productId);
         let availableSerials = [];
         if (product && product.stock) {
-            const stockEntry = product.stock.find(s => s.dimensions === dimension);
+            const dimKey = UI.normalizeDimensions(dimension);
+            const stockEntry = product.stock.find(s => UI.normalizeDimensions(s.dimensions) === dimKey);
             // فرش‌های فروخته‌شدهِ انبار سفارش قابل فروش مجدد نیستند
             const sellable = stockEntry ? (stockEntry.available_serial_ids || stockEntry.serial_ids) : null;
             if (sellable) {
@@ -1391,7 +1387,10 @@ const InvoiceManager = (function () {
         // (after payments are populated, so already-linked advances are marked correctly).
         personSelect.off('change.advanceLog').on('change.advanceLog', () => {
             loadAdvanceLog(type);
-            if (type === 'sales') updateCustomerGroupHint();
+            if (type === 'sales') {
+                updateCustomerGroupHint();
+                setSaleChannelFromCustomer();
+            }
         });
     }
 
@@ -1566,6 +1565,7 @@ const InvoiceManager = (function () {
             tax_rate: $(`#${type}-invoice-tax-enabled`).is(':checked') ? (parseFloat($(`#${type}-invoice-tax-rate`).val()) || 0) : 0,
             invoice_number: $(`#${type}-invoice-number`).val() || '',
             salesperson_id: parseInt($('#sales-invoice-salesperson').val()) || null,
+            sale_channel: type === 'sales' ? ($('#sales-invoice-sale-channel').val() || null) : undefined,
             items: [],
             payments: [],
             savedAt: Date.now(),
@@ -1577,8 +1577,7 @@ const InvoiceManager = (function () {
                 return;
             }
             const pid = parseInt($r.find('.product-select').val()) || null;
-            let dim = $r.find('.dimensions-select').val();
-            if (dim === 'custom') dim = ($r.find('.custom-dimension-input').val() || '').trim();
+            const dim = getInvoiceRowDimensions($r);
             if (!pid) return;
             draft.items.push({ productId: pid, productName: $r.find('.product-select option:selected').text(), dimensions: dim || '', quantity: parseInt($r.find('.quantity').val()) || 0, unitPrice: num($r.find('.unit-price').val()) });
         });
@@ -1640,8 +1639,9 @@ const InvoiceManager = (function () {
             banner.remove();
             const inv = { ...draft };
             delete inv.savedAt;
-            prepareInvoiceModal(type, inv);
-            if (draft.salesperson_id) $('#sales-invoice-salesperson').val(draft.salesperson_id);
+            prepareInvoiceModal(type, inv).then(() => {
+                if (draft.salesperson_id) $('#sales-invoice-salesperson').val(draft.salesperson_id);
+            });
         });
     }
 
@@ -1707,6 +1707,10 @@ const InvoiceManager = (function () {
                 payload.deliveryStatusFilter = deliveryFilter;
             }
         }
+        if (tableName === 'sales_invoices') {
+            const channelFilter = $('#sales-channel-filter').val();
+            if (channelFilter) payload.saleChannelFilter = channelFilter;
+        }
         if (tableName === 'purchase_invoices') {
             const whTypeFilter = $('#purchase-warehouse-type-filter').val();
             if (whTypeFilter) {
@@ -1723,6 +1727,13 @@ const InvoiceManager = (function () {
             App.applyPermissions();
         }
         UI.hideLoader();
+    }
+
+    /** Default the invoice's «نوع فروش» to the selected customer's type. */
+    function setSaleChannelFromCustomer() {
+        const customerId = parseInt($('#sales-invoice-customer').val()) || 0;
+        const customer = (App.getCache().customers || []).find(c => Number(c.id) === customerId);
+        $('#sales-invoice-sale-channel').val((customer && customer.sale_channel) || 'retail');
     }
 
     let customerGroupsCache = null;
@@ -1773,9 +1784,29 @@ const InvoiceManager = (function () {
         sel.closest('.salesperson-wrapper').toggle(salespeopleCache.length > 0);
     }
 
-    function prepareInvoiceModal(type, invoice = null) {
+    /**
+     * The product list is cached once per page load. Products created after
+     * that (another tab, another user, a script) would leave the invoice rows
+     * with an empty «طرح فرش» and size — and saving that form wipes the rows.
+     * Reload the list when an item's product is not in the cache.
+     */
+    async function ensureInvoiceProductsCached(invoice) {
+        if (!invoice || !Array.isArray(invoice.items)) return;
+        const known = new Set((App.getCache().products || []).map(p => String(p.id)));
+        const missing = invoice.items.some(it => it.is_service != 1 && it.productId && !known.has(String(it.productId)));
+        if (!missing) return;
+        try {
+            await App.updateCache(['products']);
+        } catch (e) {
+            console.warn('Product list refresh failed', e);
+        }
+    }
+
+    async function prepareInvoiceModal(type, invoice = null) {
         const modalId = `#${type}InvoiceModal`;
         const formId = `#${type}-invoice-form`;
+
+        await ensureInvoiceProductsCached(invoice);
 
         _resetModal(modalId, formId, type);
 
@@ -1806,6 +1837,11 @@ const InvoiceManager = (function () {
         if (type === 'sales') {
             populateSalespersonSelect(invoice ? invoice.salesperson_id : null);
             updateCustomerGroupHint();
+            if (invoice && invoice.sale_channel) {
+                $('#sales-invoice-sale-channel').val(invoice.sale_channel);
+            } else {
+                setSaleChannelFromCustomer();
+            }
         }
         $(modalId).modal('show');
         if (!invoice) {
@@ -1980,7 +2016,7 @@ const InvoiceManager = (function () {
             if (dim === 'custom') {
                 dim = ($(this).find('.custom-dimension-input').val() || '').trim();
             }
-            item.dimensions = dim;
+            item.dimensions = UI.normalizeDimensions(dim);
             item.quantity = parseInt($(this).find('.quantity').val()) || 0;
             item.unitPrice = parseInt(($(this).find('.unit-price').val() || '').replace(/,/g, '')) || 0;
 
@@ -2111,6 +2147,7 @@ const InvoiceManager = (function () {
         };
         if (type === 'sales') {
             data.salesperson_id = parseInt($('#sales-invoice-salesperson').val()) || null;
+            data.sale_channel = $('#sales-invoice-sale-channel').val() || null;
         }
 
         if (!data.date) {
@@ -2782,6 +2819,22 @@ const InvoiceManager = (function () {
             load('sales_invoices', { filterType: 'online_store' }, 'نمایش فاکتورهای فروشگاه آنلاین');
         });
 
+        // The blank paper form the salesperson fills by hand; accounting enters the
+        // sale from it. The form is a static page: the current business's name,
+        // logo and phone are left for it in localStorage right before it opens.
+        $('#print-proforma-form-btn').on('click', function () {
+            const s = UI.getPrintSettings();
+            try {
+                localStorage.setItem(AppConfig.STORAGE_KEYS.PAPER_FORM_SHOP, JSON.stringify({
+                    name: s.company_name,
+                    phone: s.company_phone,
+                    logo: (s.show_logo && s.logo_url) ? new URL(s.logo_url, window.location.href).href : '',
+                }));
+            } catch (e) { /* storage blocked: the form keeps its empty stamp box */ }
+            const win = window.open(`assets/forms/pish-factor-forush.html?v=${encodeURIComponent(AppConfig.VERSION)}`, '_blank');
+            if (!win) UI.showError('مرورگر پنجرهٔ فرم را باز نکرد. اجازهٔ باز شدن پنجره را به این سایت بدهید.');
+        });
+
         const purchaseSearchHandler = UI.debounce((term) => {
             const state = AppConfig.TABLE_STATES.purchase_invoices;
             delete state.filterType; // Clear special filters when searching
@@ -3285,6 +3338,10 @@ const InvoiceManager = (function () {
         $('body').on('change', '.delivery-status-filter', function () {
             const type = $(this).data('type');
             load(`${type}_invoices`);
+        });
+        $('#sales-channel-filter').on('change', function () {
+            AppConfig.TABLE_STATES.sales_invoices.currentPage = 1;
+            load('sales_invoices');
         });
         $('#purchase-warehouse-type-filter').on('change', function () {
             const state = AppConfig.TABLE_STATES.purchase_invoices;

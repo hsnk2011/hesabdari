@@ -13,6 +13,10 @@ class Customer extends BaseModel {
     public function getPaginated($input) {
         $this->ensurePersonJobColumn();
         $balanceFilter = trim($input['balanceFilter'] ?? '');
+        $channelFilter = normalize_sale_channel($input['saleChannelFilter'] ?? null);
+        if ($channelFilter !== null) {
+            $this->where .= " AND sale_channel = '{$channelFilter}'"; // whitelisted value
+        }
 
         if ($balanceFilter !== '') {
             // Scan every matching person: the balance is computed in PHP, so a page cap here would drop people.
@@ -24,7 +28,7 @@ class Customer extends BaseModel {
         }
 
         $paginatedResult = parent::getPaginated($input);
-        
+
         if (empty($paginatedResult['data'])) {
             return $paginatedResult;
         }
@@ -97,12 +101,15 @@ class Customer extends BaseModel {
                 return ['error' => 'گروه مشتری نامعتبر است.', 'statusCode' => 400];
             }
         }
+        // نوع فروش: فرم‌هایی که آن را نمی‌فرستند (افزودن سریع، CRM) مقدار قبلی را دست نمی‌زنند.
+        $saleChannel = normalize_sale_channel($data['sale_channel'] ?? null);
         if ($id) {
-            $stmt = $this->conn->prepare("UPDATE `{$this->tableName}` SET name = ?, address = ?, phone = ?, job = ?, nationalId = ?, initial_balance = ?, credit_limit = ?, group_id = ? WHERE id = ? AND entity_id = ?");
-            $stmt->bind_param("sssssddiii", $name, $address, $phone, $jobValue, $nationalId, $initial_balance, $creditLimit, $groupId, $id, $entity_id);
+            $stmt = $this->conn->prepare("UPDATE `{$this->tableName}` SET name = ?, address = ?, phone = ?, job = ?, nationalId = ?, initial_balance = ?, credit_limit = ?, group_id = ?, sale_channel = COALESCE(?, sale_channel) WHERE id = ? AND entity_id = ?");
+            $stmt->bind_param("sssssddisii", $name, $address, $phone, $jobValue, $nationalId, $initial_balance, $creditLimit, $groupId, $saleChannel, $id, $entity_id);
         } else {
-            $stmt = $this->conn->prepare("INSERT INTO `{$this->tableName}` (entity_id, name, address, phone, job, nationalId, initial_balance, credit_limit, group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("isssssddi", $entity_id, $name, $address, $phone, $jobValue, $nationalId, $initial_balance, $creditLimit, $groupId);
+            $insertChannel = $saleChannel ?? 'retail';
+            $stmt = $this->conn->prepare("INSERT INTO `{$this->tableName}` (entity_id, name, address, phone, job, nationalId, initial_balance, credit_limit, group_id, sale_channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("isssssddis", $entity_id, $name, $address, $phone, $jobValue, $nationalId, $initial_balance, $creditLimit, $groupId, $insertChannel);
         }
 
         try {
@@ -111,7 +118,16 @@ class Customer extends BaseModel {
             }
             $savedId = $id ?? $this->conn->insert_id;
             $stmt->close();
-            return ['success' => true, 'id' => $savedId];
+            $result = ['success' => true, 'id' => $savedId];
+            // «فاکتورهای قبلی هم همین نوع شوند»: فقط برچسب آماری است، مبالغ و مانده‌ها تغییر نمی‌کنند.
+            if ($id && $saleChannel !== null && !empty($data['apply_channel_to_invoices'])) {
+                $upd = $this->conn->prepare("UPDATE sales_invoices SET sale_channel = ? WHERE customerId = ? AND entity_id = ? AND sale_channel <> ?");
+                $upd->bind_param('siis', $saleChannel, $id, $entity_id, $saleChannel);
+                $upd->execute();
+                $result['invoices_updated'] = $upd->affected_rows;
+                $upd->close();
+            }
+            return $result;
         } catch (Exception $e) {
             $stmt->close();
             // Fallback for other DB errors

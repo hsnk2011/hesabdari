@@ -10,10 +10,13 @@
             <button class="btn btn-outline-info" id="filter-online-store-invoices-btn" title="فاکتورهای ثبت‌شده از فروشگاه آنلاین">
                 <i class="bi bi-shop me-1"></i>فروشگاه آنلاین
             </button>
+            <button class="btn btn-outline-secondary" id="print-proforma-form-btn" title="فرم خام پیش‌فاکتور برای پر کردن با دست توسط مسئول فروش">
+                <i class="bi bi-printer me-1"></i>فرم کاغذی پیش‌فاکتور
+            </button>
         </div>
     </div>
     <div id="sales_invoices-filter-info" class="mb-2"></div> <div class="row align-items-center mb-3">
-        <div class="col-md-6">
+        <div class="col-md-4">
             <div class="input-group search-box">
                 <span class="input-group-text"><i class="bi bi-search"></i></span><input type="text" class="form-control" id="sales-invoice-search" placeholder="جستجو در شماره فاکتور، نام مشتری، نام محصول، ابعاد، شناسه انبار، مبالغ...">
             </div>
@@ -28,6 +31,14 @@
                     <option value="delivered">تحویل شده</option>
                 </select>
             </div>
+        </div>
+        <div class="col-md-2">
+            <select class="form-select" id="sales-channel-filter" title="نوع فروش">
+                <option value="">همه انواع فروش</option>
+                <option value="retail">خانگی</option>
+                <option value="trade">همکار/عمده</option>
+                <option value="internal">داخلی</option>
+            </select>
         </div>
         <div class="col-md-3">
             <div class="input-group">
@@ -119,6 +130,14 @@
                         <div class="col-6 col-md-2 salesperson-wrapper" style="display:none;">
                             <label for="sales-invoice-salesperson" class="form-label">فروشنده</label>
                             <select class="form-select" id="sales-invoice-salesperson"></select>
+                        </div>
+                        <div class="col-6 col-md-auto invoice-meta-channel">
+                            <label for="sales-invoice-sale-channel" class="form-label">نوع فروش</label>
+                            <select class="form-select" id="sales-invoice-sale-channel" style="min-width:9.5rem" title="از نوع مشتری پر می‌شود؛ فقط روی آمار اثر دارد">
+                                <option value="retail">خانگی</option>
+                                <option value="trade">همکار/عمده</option>
+                                <option value="internal">داخلی</option>
+                            </select>
                         </div>
                         <div class="col-12 customer-group-hint" style="display:none;"></div>
                         <div class="col-6 col-md-auto invoice-meta-tax">

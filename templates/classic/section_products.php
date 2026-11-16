@@ -71,6 +71,14 @@
                 <input type="text" inputmode="decimal" class="form-control form-control-sm" id="product-min-area" style="width: 80px;" placeholder="از (م²)" title="حداقل متراژ (مترمربع)">
                 <input type="text" inputmode="decimal" class="form-control form-control-sm" id="product-max-area" style="width: 80px;" placeholder="تا (م²)" title="حداکثر متراژ (مترمربع)">
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="product-size-clear" title="پاک کردن فیلتر اندازه"><i class="bi bi-x-lg"></i></button>
+                <div class="btn-group btn-group-sm" role="group" aria-label="هر ردیف">
+                    <button type="button" class="btn btn-outline-secondary active" id="rows-per-product-btn" title="هر ردیف یک محصول">
+                        <i class="bi bi-collection me-1"></i>محصول
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="rows-per-item-btn" title="هر ردیف یک کالا (یک تخته فرش) با شناسه انبار">
+                        <i class="bi bi-upc me-1"></i>کالا
+                    </button>
+                </div>
                 <div class="btn-group btn-group-sm" role="group">
                     <button type="button" class="btn btn-outline-secondary active" id="view-table-btn" title="نمای جدولی">
                         <i class="bi bi-list"></i>
@@ -95,12 +103,28 @@
                         <th class="sortable-header" data-sort-by="collectionName">کلکسیون<span class="sort-indicator"></span></th>
                         <th>انبارها</th>
                         <th class="sortable-header" data-sort-by="total_stock">موجودی <span class="sort-indicator"></span></th>
+                        <th title="شناسه یکتای هر فرش موجود (serial_id)">شناسه انبار</th>
                         <th>توضیحات</th>
                         <th style="width: 140px;">عملیات</th>
                     </tr>
                 </thead>
                 <tbody id="products-table-body"></tbody>
             </table>
+            <!-- Header of the per-item view («کالا»): one row per rug; swapped in by product-manager.js -->
+            <template id="product-items-thead">
+                <tr>
+                    <th style="width: 40px;"><input type="checkbox" id="select-all-items" title="انتخاب همه"></th>
+                    <th style="width: 60px;">تصویر</th>
+                    <th class="sortable-header" data-sort-by="serial_id">شناسه انبار <span class="sort-indicator"></span></th>
+                    <th class="sortable-header" data-sort-by="name">نام محصول <span class="sort-indicator"></span></th>
+                    <th class="sortable-header" data-sort-by="collectionName">کلکسیون <span class="sort-indicator"></span></th>
+                    <th class="sortable-header" data-sort-by="dimensions">ابعاد <span class="sort-indicator"></span></th>
+                    <th class="sortable-header" data-sort-by="warehouse">انبار <span class="sort-indicator"></span></th>
+                    <th class="sortable-header" data-sort-by="status">وضعیت <span class="sort-indicator"></span></th>
+                    <th class="sortable-header" data-sort-by="entry_date">تاریخ ورود <span class="sort-indicator"></span></th>
+                    <th style="width: 110px;">عملیات</th>
+                </tr>
+            </template>
         </div>
     </div>
     

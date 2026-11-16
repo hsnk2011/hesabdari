@@ -17,15 +17,16 @@ class ClosingSnapshotBuilder {
     public function build($entityId, $periodStart, $periodEnd, $calculationMethod, array $extra = []) {
         $report = new ReportModel($this->conn);
 
-        $plData = $report->getProfitLossReport([
+        // preview() already ran this exact report; reuse it (and its receivables/debts as of the end date).
+        $plData = $extra['plData'] ?? $report->getProfitLossReport([
             'startDate' => $periodStart,
             'endDate' => $periodEnd,
             'entityId' => $entityId,
             'calculationMethod' => $calculationMethod,
         ]);
 
-        $customerReceivables = $this->getCustomerReceivables($periodEnd, $entityId);
-        $supplierDebts = $this->getSupplierDebts($periodEnd, $entityId);
+        $customerReceivables = $plData['customerReceivables'] ?? $this->getCustomerReceivables($periodEnd, $entityId);
+        $supplierDebts = $plData['supplierDebts'] ?? $this->getSupplierDebts($periodEnd, $entityId);
         $checks = $this->getChecksPortfolio($periodEnd, $entityId);
         $liquidity = $this->getLiquiditySnapshot($entityId, $periodEnd);
         $inventory = $this->getInventorySnapshot($periodEnd, $entityId, $report);
@@ -73,18 +74,33 @@ class ClosingSnapshotBuilder {
             + $checksPayableLiability
             + $vatPayable;
 
-        // Equity must equal Assets − Liabilities for the sheet to balance.
-        // Partner capital (واریز/برداشت) alone misses prior retained earnings / inventory equity;
-        // adding only this period's P&L still understates equity on a first close.
-        // So: total equity = net assets; break down into partner capital + unallocated residual.
+        // Equity is built from its sources, independently of the asset side:
+        // opening balances + partner capital + every profit since the first document.
+        // Profit uses the inventory method from the very beginning: it values stock exactly
+        // like the inventory line above, so any difference is a real gap in the books
+        // (money or a balance with no document behind it), not a method artefact.
+        // Profit already posted to partners (CLOSING:*) sits inside partner capital; it is
+        // subtracted once so it is not counted twice.
         $netAssets = round($totalAssets - $totalLiabilities, 2);
         $partnerCapital = round($closingCapital, 2);
-        $unallocatedEarnings = round($netAssets - $partnerCapital, 2);
-        $equityCalculated = $netAssets;
-        $balanceDifference = round($totalAssets - $totalLiabilities - $equityCalculated, 2);
+        $openingBalances = $this->getOpeningBalances($entityId);
+        $lifetimeProfit = (float)($report->getProfitLossReport([
+            'startDate' => '1900-01-01',
+            'endDate' => $periodEnd,
+            'entityId' => $entityId,
+            'calculationMethod' => 'inventory',
+            'skipPartnerDetails' => true,
+        ])['netOperatingProfit'] ?? 0);
+        $postedProfit = $this->getPostedClosingProfit($entityId, $periodEnd);
+        $retainedEarnings = round($openingBalances + $lifetimeProfit - $postedProfit, 2);
+        $equityCalculated = round($partnerCapital + $retainedEarnings, 2);
+        $unallocatedEarnings = $retainedEarnings;
+        $balanceDifference = round($netAssets - $equityCalculated, 2);
 
         $nextPeriodStart = date('Y-m-d', strtotime($periodEnd . ' +1 day'));
 
+        // The opening entry carries the real balances forward, so its equity line is
+        // whatever makes it balance: net assets.
         $openingEntry = $this->buildOpeningEntry(
             $nextPeriodStart,
             $customerReceivables,
@@ -93,7 +109,7 @@ class ClosingSnapshotBuilder {
             $checks,
             $inventory,
             $partners,
-            $equityCalculated,
+            $netAssets,
             $netProfit,
             $vatNetPayable
         );
@@ -118,6 +134,9 @@ class ClosingSnapshotBuilder {
                 'closingCapital' => $closingCapital,
                 'netProfit' => $netProfit,
                 'partnerCapital' => $partnerCapital,
+                'openingBalances' => round($openingBalances, 2),
+                'lifetimeProfit' => round($lifetimeProfit, 2),
+                'postedProfit' => round($postedProfit, 2),
                 'unallocatedEarnings' => $unallocatedEarnings,
                 'netAssets' => $netAssets,
                 'equityWithProfit' => $equityCalculated,
@@ -162,6 +181,35 @@ class ClosingSnapshotBuilder {
             ],
             'openingEntry' => $openingEntry,
         ];
+    }
+
+    /**
+     * Balances entered by hand when the books were started (no document behind them):
+     * company bank/cash accounts and customers count for us, suppliers against us.
+     */
+    private function getOpeningBalances($entityId) {
+        $stmt = $this->conn->prepare("
+            SELECT
+                COALESCE((SELECT SUM(initial_balance) FROM accounts WHERE entity_id = ? AND partner_id IS NULL), 0)
+              + COALESCE((SELECT SUM(initial_balance) FROM customers WHERE entity_id = ?), 0)
+              - COALESCE((SELECT SUM(initial_balance) FROM suppliers WHERE entity_id = ?), 0) AS total
+        ");
+        $stmt->bind_param('iii', $entityId, $entityId, $entityId);
+        $stmt->execute();
+        return (float)(db_stmt_to_assoc_array($stmt)[0]['total'] ?? 0);
+    }
+
+    /** Net profit already posted to partners by earlier closings, up to $asOfDate. */
+    private function getPostedClosingProfit($entityId, $asOfDate) {
+        $stmt = $this->conn->prepare("
+            SELECT COALESCE(SUM(IF(transaction_type = 'receipt', amount, -amount)), 0) AS total
+            FROM payments
+            WHERE entity_id = ? AND person_type = 'partner' AND date <= ?
+              AND description LIKE 'CLOSING:%'
+        ");
+        $stmt->bind_param('is', $entityId, $asOfDate);
+        $stmt->execute();
+        return (float)(db_stmt_to_assoc_array($stmt)[0]['total'] ?? 0);
     }
 
     private function getCustomerReceivables($endDate, $entityId) {
@@ -746,19 +794,11 @@ class ClosingSnapshotBuilder {
             $warnings[] = [
                 'level' => $level,
                 'message' => 'اختلاف ترازنامه: ' . number_format($diff) . ' تومان '
-                    . '(دارایی منهای بدهی منهای سرمایه). معادله تراز برقرار نیست؛ '
-                    . 'نقدینگی، چک‌ها و مطالبات را بازبینی کنید.',
-            ];
-        }
-
-        $unallocated = (float)($snapshot['capital']['unallocatedEarnings'] ?? $snapshot['balanceSheet']['equity']['unallocatedEarnings'] ?? 0);
-        $netProfit = (float)($snapshot['capital']['netProfit'] ?? 0);
-        if (abs($unallocated - $netProfit) >= 1000) {
-            $warnings[] = [
-                'level' => 'warning',
-                'message' => 'اندوخته تخصیص‌نیافته (' . number_format($unallocated)
-                    . ' تومان) با سود همین دوره (' . number_format($netProfit)
-                    . ' تومان) فرق دارد؛ معمولاً اثر موجودی/سود دوره‌های قبل است و مانع بستن نیست.',
+                    . '(خالص دارایی‌ها منهای سرمایه شرکا، سود انباشته و مانده‌های اول دوره). '
+                    . ($diff > 0
+                        ? 'دارایی یا طلبی بیشتر از آنچه اسناد توضیح می‌دهند ثبت شده؛ '
+                        : 'دارایی یا طلبی کمتر از آنچه اسناد توضیح می‌دهند ثبت شده؛ ')
+                    . 'مغایرت حساب‌ها، پرداخت‌های بدون شخص/فاکتور و حساب‌های خارج از موجودی نقد را بازبینی کنید.',
             ];
         }
 
